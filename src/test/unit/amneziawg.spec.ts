@@ -273,6 +273,44 @@ Endpoint = 192.0.2.1:47822`);
     );
   });
 
+  test('exports peers without a PSK by omitting the directive in both configs', () => {
+    const withoutPsk = { ...client, preSharedKey: '' };
+    expect(wg.generateServerPeer(withoutPsk, { enableIpv6: false }))
+      .toBe(`# Client: Laptop (1)
+[Peer]
+PublicKey = client-public
+AllowedIPs = 172.30.61.2/32`);
+    const exported = wg.generateClientConfig(iface, userConfig, withoutPsk, {
+      enableIpv6: false,
+    });
+    expect(exported).not.toContain('PresharedKey');
+    expect(exported).toBe(
+      wg
+        .generateClientConfig(iface, userConfig, client, { enableIpv6: false })
+        .replace('PresharedKey = client-psk\n', '')
+    );
+  });
+
+  test.each(['client-psk', Buffer.alloc(32).toString('base64')])(
+    'retains a nonempty PSK unchanged in server and client exports: %s',
+    (preSharedKey) => {
+      const withPsk = { ...client, preSharedKey };
+      expect(wg.generateServerPeer(withPsk, { enableIpv6: false }))
+        .toBe(`# Client: Laptop (1)
+[Peer]
+PublicKey = client-public
+PresharedKey = ${preSharedKey}
+AllowedIPs = 172.30.61.2/32`);
+      expect(
+        wg.generateClientConfig(iface, userConfig, withPsk, {
+          enableIpv6: false,
+        })
+      ).toContain(
+        `PublicKey = server-public\nPresharedKey = ${preSharedKey}\nAllowedIPs = 0.0.0.0/0`
+      );
+    }
+  );
+
   test('allows peer timing overrides while preserving the shared header key', () => {
     const settings = generateAwg31Parameters().awgSettings!;
     const override = {

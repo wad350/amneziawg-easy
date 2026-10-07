@@ -46,8 +46,7 @@ export const wg = {
 
     return `# Client: ${client.name} (${client.id})
 [Peer]
-PublicKey = ${client.publicKey}
-PresharedKey = ${client.preSharedKey}
+PublicKey = ${client.publicKey}${client.preSharedKey ? `\nPresharedKey = ${client.preSharedKey}` : ''}
 AllowedIPs = ${allowedIps.join(', ')}${extraLines.length ? `\n${extraLines.join('\n')}` : ''}`;
   },
 
@@ -146,8 +145,7 @@ Address = ${address}
 MTU = ${client.mtu}
 ${extraLines.length ? `${extraLines.join('\n')}\n` : ''}
 [Peer]
-PublicKey = ${wgInterface.publicKey}
-PresharedKey = ${client.preSharedKey}
+PublicKey = ${wgInterface.publicKey}${client.preSharedKey ? `\nPresharedKey = ${client.preSharedKey}` : ''}
 AllowedIPs = ${(client.allowedIps ?? userConfig.defaultAllowedIps).join(', ')}
 PersistentKeepalive = ${wgExecutable === 'awg' ? (clientAwgSettings?.persistentKeepaliveRange ?? client.persistentKeepalive) : client.persistentKeepalive}
 Endpoint = ${userConfig.host}:${userConfig.port}`;
