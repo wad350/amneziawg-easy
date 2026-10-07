@@ -48,11 +48,9 @@ Rules are evaluated in their displayed order; the first matching rule wins. Move
 
 Networks and ports constrain a rule; its domain, suffix, CIDR and rule-set selectors provide alternative matches. Unmatched traffic exits directly from this server.
 
-The **YouTube** preset adds its 18 public domain suffixes for TCP and UDP port 443. The **Russian zones** preset adds `.ru` and `.рф` suffixes for TCP port 443. These are explicit templates, not a complete classification of every service or Russian IP network. Use a rule set or CIDRs when the desired policy requires an IP list.
+Add rules for the destinations you want to route and select the required outbound for each rule. Put specific exceptions before broader domain suffixes, CIDRs or rule sets. The tool does not supply predefined service or region policies.
 
-The **OpenVPN → Direct** preset uses the VPN domains and public IPv4/CIDRs entered by the administrator. The inputs are empty by default. This exception is inserted before other rules; it affects only the specified traffic that passes through this AWG instance. It does not modify an OpenVPN profile, install routes on a Mac or router, discover corporate networks, or combine two client VPNs automatically.
-
-For a new client that must also run a corporate OpenVPN connection, exclude the OpenVPN server's public IPv4 `/32` and the required work IPv4 CIDRs from that **new client's Allowed IPs** in the normal client editor. A server-side Direct rule still sends the packet through the AWG tunnel before it exits, so it is not a replacement for client route exclusions. A hostname alone cannot express an AllowedIPs exception. Re-export the new profile after editing; existing clients are not changed. Correct route exclusions may be necessary for coexistence, but do not by themselves resolve macOS VPN-extension or corporate DNS conflicts.
+A **Direct** rule sends matching traffic out through this server's local connection. It still receives that traffic through the client's AWG tunnel; it does not change the client's local routing table or AllowedIPs. Client route settings remain separate from server-side outbound routing.
 
 ## Preview, save and apply
 
@@ -60,15 +58,15 @@ For a new client that must also run a corporate OpenVPN connection, exclude the 
 
 **Save draft** stores the configuration without changing the active routing engine. **Save and apply** activates the saved configuration, or stops it when domain routing is disabled. Routing starts disabled in a new instance.
 
-Applied interception is limited to packets entering this instance's AWG interface from its configured client subnet and using selected transports and ports. Outbound interfaces, nftables tables and policy routing belong to the isolated container namespace. Existing host VPN interfaces, other containers, VLESS, Hysteria2 and remote server configurations are outside this scope.
+Applied interception is limited to packets entering this instance's AWG interface from its configured client subnet and using selected transports and ports. Outbound interfaces, nftables tables and policy routing belong to the isolated container namespace. Existing host interfaces, other containers and remote server configurations are outside this scope.
 
 Apply can briefly interrupt this instance's selected traffic while its routing engine is replaced. If the routing process stops unexpectedly, interception remains in place to prevent selected traffic from silently switching to a direct connection. Check the displayed status; repair and apply the configuration, or disable routing and apply that change to remove this instance's interception.
 
-## Domain matching and OpenVPN limits
+## Domain matching and DNS limits
 
 The routing engine sniffs visible names in HTTP, TLS and supported QUIC handshakes. It cannot recover arbitrary domain names from every connection. ECH can conceal the useful TLS name, traffic addressed only by IP has no domain to inspect, and many UDP protocols expose no usable hostname. Such traffic needs suitable CIDR rules or rule sets; a domain-only rule may remain unmatched and use the direct default.
 
-This feature does not implement a DNS gateway, Fake-IP service or per-client split DNS. A Mac's corporate OpenVPN DNS policy can still conflict with a router's domain-based proxy service. An unknown set of work domain zones cannot be inferred reliably from an AWG outbound configuration. Correct OpenVPN coexistence requires an appropriate corporate routing/DNS policy, known exceptions, or a separately chosen client/router architecture.
+This feature does not implement a DNS gateway, Fake-IP service or per-client split DNS. It does not infer domain names from an AWG outbound profile or DNS policy. Configure client DNS and any DNS-based routing separately; imported outbound DNS metadata does not change the server's resolver.
 
 The fork does not inspect, restart or change a remote VPN server. Allocate its dedicated outbound peer using that server's own management tools. Keep client and outbound profiles private; backups of this instance may contain their keys.
 

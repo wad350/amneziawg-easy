@@ -214,71 +214,6 @@
         <p class="col-span-full text-sm text-gray-500 dark:text-neutral-300">
           {{ $t('routing.rulesDescription') }}
         </p>
-        <div
-          class="col-span-full flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 p-3 dark:bg-neutral-800"
-        >
-          <label for="preset-egress" class="text-sm">{{
-            $t('routing.presetEgress')
-          }}</label>
-          <select
-            id="preset-egress"
-            v-model="presetEgress"
-            class="rounded border-2 border-gray-100 bg-white px-3 py-2 dark:border-neutral-600 dark:bg-neutral-700"
-          >
-            <option value="" disabled>{{ $t('routing.selectEgress') }}</option>
-            <option
-              v-for="egress in config.egresses"
-              :key="egress.id"
-              :value="egress.id"
-            >
-              {{ egress.name }}
-            </option>
-          </select>
-          <BaseSecondaryButton
-            type="button"
-            :disabled="!presetEgress"
-            @click="addPreset('youtube')"
-            >YouTube</BaseSecondaryButton
-          >
-          <BaseSecondaryButton
-            type="button"
-            :disabled="!presetEgress"
-            @click="addPreset('ru')"
-            >{{ $t('routing.ruPreset') }}</BaseSecondaryButton
-          >
-          <BaseSecondaryButton type="button" @click="addPreset('openvpn')"
-            >OpenVPN → {{ $t('routing.direct') }}</BaseSecondaryButton
-          >
-        </div>
-        <div class="col-span-full grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label for="openvpn-domains" class="mb-2 block text-sm">{{
-              $t('routing.openvpnDomains')
-            }}</label>
-            <BaseTextArea
-              id="openvpn-domains"
-              v-model="openvpnDomains"
-              rows="2"
-              class="w-full px-3 py-2 font-mono text-sm"
-              placeholder="vpn.example.com"
-            />
-          </div>
-          <div>
-            <label for="openvpn-cidrs" class="mb-2 block text-sm">{{
-              $t('routing.openvpnCidrs')
-            }}</label>
-            <BaseTextArea
-              id="openvpn-cidrs"
-              v-model="openvpnCidrs"
-              rows="2"
-              class="w-full px-3 py-2 font-mono text-sm"
-              placeholder="203.0.113.10/32"
-            />
-          </div>
-          <p class="col-span-full text-sm text-gray-500 dark:text-neutral-300">
-            {{ $t('routing.openvpnDescription') }}
-          </p>
-        </div>
         <article
           v-for="(rule, index) in config.rules"
           :key="rule.id"
@@ -379,7 +314,7 @@
                 :id="`rule-ports-${rule.id}`"
                 :model-value="rule.ports.join(', ')"
                 class="w-full px-3 py-2"
-                placeholder="443, 1194, 8000-8100"
+                placeholder="80, 443, 8000-8100"
                 @update:model-value="rule.ports = lines($event)"
               />
             </div>
@@ -415,7 +350,7 @@
                   :id="`set-tag-${rule.id}-${setIndex}`"
                   v-model="set.tag"
                   class="w-full px-3 py-2"
-                  placeholder="youtube-list"
+                  placeholder="rules-list"
                 />
               </div>
               <div>
@@ -586,9 +521,6 @@ const busy = ref(false);
 const acknowledged = reactive<Record<string, boolean>>({});
 const revealed = reactive<Record<string, boolean>>({});
 const imports = reactive<Record<string, ImportResult>>({});
-const presetEgress = ref('');
-const openvpnDomains = ref('');
-const openvpnCidrs = ref('');
 const previewResult = ref<PreviewResult | null>(null);
 const selectorFields = ['domains', 'suffixes', 'cidrs'] as const;
 
@@ -599,8 +531,6 @@ function restore() {
   for (const egress of config.value.egresses) acknowledged[egress.id] = true;
   for (const id of Object.keys(imports)) Reflect.deleteProperty(imports, id);
   previewResult.value = null;
-  if (!config.value.egresses.some((egress) => egress.id === presetEgress.value))
-    presetEgress.value = config.value.egresses[0]?.id ?? '';
 }
 restore();
 
@@ -644,7 +574,6 @@ function addEgress() {
   });
   acknowledged[id] = false;
   revealed[id] = true;
-  if (!presetEgress.value) presetEgress.value = id;
 }
 function removeEgress(id: string) {
   if (!config.value) return;
@@ -658,8 +587,6 @@ function removeEgress(id: string) {
   Reflect.deleteProperty(acknowledged, id);
   Reflect.deleteProperty(revealed, id);
   Reflect.deleteProperty(imports, id);
-  if (presetEgress.value === id)
-    presetEgress.value = config.value.egresses[0]?.id ?? '';
 }
 async function uploadProfile(id: string, event: Event) {
   const input = event.target as HTMLInputElement;
@@ -724,55 +651,6 @@ function moveRule(index: number, direction: -1 | 1) {
 }
 function addRuleSet(rule: RoutingRule) {
   rule.ruleSets.push({ tag: identifier('set'), url: '', format: 'binary' });
-}
-function addPreset(preset: 'youtube' | 'ru' | 'openvpn') {
-  if (!config.value || (preset !== 'openvpn' && !presetEgress.value)) return;
-  const rule = makeRule(
-    preset === 'ru'
-      ? t('routing.ruPreset')
-      : preset === 'openvpn'
-        ? 'OpenVPN'
-        : 'YouTube',
-    preset === 'openvpn' ? 'direct' : presetEgress.value
-  );
-  if (preset === 'youtube') {
-    rule.networks = ['tcp', 'udp'];
-    rule.suffixes = [
-      'ggpht.com',
-      'googlevideo.com',
-      'jnn-pa.googleapis.com',
-      'returnyoutubedislikeapi.com',
-      'wide-youtube.l.google.com',
-      'youtu.be',
-      'youtube-nocookie.com',
-      'youtube-ui.l.google.com',
-      'youtube.com',
-      'youtubeembeddedplayer.googleapis.com',
-      'youtubei.googleapis.com',
-      'youtubekids.com',
-      'yt-video-upload.l.google.com',
-      'yt.be',
-      'yt3.googleusercontent.com',
-      'ytimg.com',
-      'ytimg.l.google.com',
-      'yting.com',
-    ];
-    config.value.rules.push(rule);
-  } else if (preset === 'ru') {
-    rule.suffixes = ['ru', 'xn--p1ai'];
-    config.value.rules.push(rule);
-  } else {
-    rule.domains = lines(openvpnDomains.value);
-    rule.cidrs = lines(openvpnCidrs.value).map((value) =>
-      value.includes('/') ? value : `${value}/32`
-    );
-    if (!rule.domains.length && !rule.cidrs.length) {
-      errorToast(new Error(t('routing.openvpnRequired')));
-      return;
-    }
-    config.value.rules.unshift(rule);
-  }
-  previewResult.value = null;
 }
 function checkAcknowledgements() {
   const missing = config.value?.egresses.find(

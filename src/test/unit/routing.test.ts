@@ -23,7 +23,6 @@ import {
   renderSingBox,
   renderNftables,
   renderRoutingGate,
-  youtubeRuPreset,
 } from '../../server/utils/routingRender';
 import {
   loadRoutingConfig,
@@ -55,10 +54,44 @@ const config = () =>
     egresses: [
       { id: 'remote', name: 'Remote', profile, independentPeer: true },
     ],
-    rules: youtubeRuPreset('remote', {
-      domains: ['openvpn.example.com'],
-      cidrs: ['198.51.100.224/32'],
-    }),
+    rules: [
+      {
+        id: 'selected-domains',
+        name: 'Selected domains',
+        enabled: true,
+        networks: ['tcp', 'udp'],
+        ports: ['443'],
+        suffixes: ['example.com'],
+        outbound: 'remote',
+      },
+      {
+        id: 'direct-domain',
+        name: 'Direct domain',
+        enabled: true,
+        networks: ['tcp'],
+        ports: ['443'],
+        domains: ['direct.example.net'],
+        outbound: 'direct',
+      },
+      {
+        id: 'direct-address',
+        name: 'Direct address',
+        enabled: true,
+        networks: ['tcp'],
+        ports: ['443'],
+        cidrs: ['198.51.100.10/32'],
+        outbound: 'direct',
+      },
+      {
+        id: 'selected-suffix',
+        name: 'Selected suffix',
+        enabled: true,
+        networks: ['tcp'],
+        ports: ['443'],
+        suffixes: ['example.org'],
+        outbound: 'remote',
+      },
+    ],
   });
 const temporary: string[] = [];
 afterEach(async () => {
@@ -194,15 +227,15 @@ describe('routing validation and rendering', () => {
       outbound: 'remote',
     });
     expect(rendered.route.rules[2]).toMatchObject({
-      domain: ['openvpn.example.com'],
+      domain: ['direct.example.net'],
       outbound: 'direct',
     });
     expect(rendered.route.rules[3]).toMatchObject({
-      ip_cidr: ['198.51.100.224/32'],
+      ip_cidr: ['198.51.100.10/32'],
       outbound: 'direct',
     });
     expect(rendered.route.rules[4]).toMatchObject({
-      domain_suffix: ['ru', 'xn--p1ai'],
+      domain_suffix: ['example.org'],
       outbound: 'remote',
     });
     expect(JSON.stringify(rendered)).not.toContain('override_address');
@@ -265,8 +298,8 @@ describe('routing validation and rendering', () => {
     const candidate = config();
     candidate.rules[0]!.ruleSets = [
       {
-        tag: 'youtube',
-        url: 'https://raw.githubusercontent.com/itdoginfo/allow-domains/main/Services/youtube.srs',
+        tag: 'domain-list',
+        url: 'https://raw.githubusercontent.com/example/rules/main/domains.srs',
         format: 'binary',
       },
     ];

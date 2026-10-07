@@ -372,9 +372,6 @@
     "addEgress": "Add AWG outbound",
     "rules": "Ordered rules",
     "rulesDescription": "Rules are evaluated from top to bottom; the first match wins. Networks and ports constrain the rule, and any domain, suffix, CIDR or rule set may match. Domain matching uses names visible in HTTP, TLS or QUIC; ECH and IP-only traffic cannot always be identified.",
-    "presetEgress": "Outbound for presets",
-    "selectEgress": "Choose outbound",
-    "ruPreset": "Russian zones (.ru / .рф)",
     "newRule": "New rule",
     "moveUp": "Move up",
     "moveDown": "Move down",
@@ -384,9 +381,9 @@
     "networks": "Transport",
     "ports": "Ports or ranges",
     "domains": "Exact domains",
-    "domainsPlaceholder": "vpn.example.com\none.domain.example",
+    "domainsPlaceholder": "example.com\nexample.net",
     "suffixes": "Domain suffixes (including subdomains)",
-    "suffixesPlaceholder": "youtube.com\nru",
+    "suffixesPlaceholder": "example.com\nexample.net",
     "cidrs": "Destination IPv4 CIDRs",
     "cidrsPlaceholder": "203.0.113.10/32\n203.0.113.0/24",
     "ruleSets": "Remote rule sets",
@@ -406,10 +403,6 @@
     "profileTooLarge": "The profile exceeds 256 KiB.",
     "independentRequired": "Confirm that \"{name}\" uses a separate unused peer.",
     "applied": "Routing configuration applied",
-    "saved": "Draft saved",
-    "openvpnDomains": "OpenVPN domains to keep direct",
-    "openvpnCidrs": "OpenVPN server and work IPv4 CIDRs",
-    "openvpnDescription": "Enter your own VPN server and any work public networks. The OpenVPN preset places this direct exception before the other rules; it does not modify your OpenVPN client configuration.",
-    "openvpnRequired": "Enter at least one OpenVPN domain or IPv4 CIDR before adding the exception."
+    "saved": "Draft saved"
   }
 }

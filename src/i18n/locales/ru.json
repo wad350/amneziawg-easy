@@ -369,9 +369,6 @@
     "addEgress": "Добавить исходящий AWG",
     "rules": "Правила по порядку",
     "rulesDescription": "Правила проверяются сверху вниз; применяется первое совпадение. Протокол и порты ограничивают правило, а домен, суффикс, CIDR или набор правил могут дать совпадение. Домены определяются по видимым именам HTTP, TLS или QUIC; ECH и трафик только по IP удаётся определить не всегда.",
-    "presetEgress": "Исходящий для шаблонов",
-    "selectEgress": "Выберите исходящий",
-    "ruPreset": "Российские зоны (.ru / .рф)",
     "newRule": "Новое правило",
     "moveUp": "Выше",
     "moveDown": "Ниже",
@@ -381,9 +378,9 @@
     "networks": "Транспорт",
     "ports": "Порты или диапазоны",
     "domains": "Точные домены",
-    "domainsPlaceholder": "vpn.example.com\none.domain.example",
+    "domainsPlaceholder": "example.com\nexample.net",
     "suffixes": "Суффиксы доменов, включая поддомены",
-    "suffixesPlaceholder": "youtube.com\nru",
+    "suffixesPlaceholder": "example.com\nexample.net",
     "cidrs": "IPv4 CIDR назначения",
     "cidrsPlaceholder": "203.0.113.10/32\n203.0.113.0/24",
     "ruleSets": "Удалённые наборы правил",
@@ -403,10 +400,6 @@
     "profileTooLarge": "Размер профиля превышает 256 КиБ.",
     "independentRequired": "Подтвердите, что «{name}» использует отдельного неиспользуемого клиента.",
     "applied": "Маршрутизация применена",
-    "saved": "Черновик сохранён",
-    "openvpnDomains": "Домены OpenVPN для прямого выхода",
-    "openvpnCidrs": "IPv4 CIDR сервера OpenVPN и рабочих сетей",
-    "openvpnDescription": "Укажите свой VPN-сервер и при необходимости публичные рабочие сети. Шаблон OpenVPN добавляет прямое исключение перед другими правилами; профиль клиента OpenVPN не меняется.",
-    "openvpnRequired": "Укажите хотя бы один домен OpenVPN или IPv4 CIDR перед добавлением исключения."
+    "saved": "Черновик сохранён"
   }
 }
