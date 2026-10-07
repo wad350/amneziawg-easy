@@ -1,10 +1,4 @@
-import {
-  createError,
-  getHeader,
-  getRequestURL,
-  getSession,
-  useSession,
-} from 'h3';
+import { createError, getHeader, getSession, useSession } from 'h3';
 import type { H3Event } from 'h3';
 
 import Database from '#server/utils/Database';
@@ -12,6 +6,7 @@ import { WG_ENV } from '#server/utils/config';
 import { isPasswordValid } from '#server/utils/password';
 import type { ID } from '#server/utils/types';
 import type { UserType } from '#db/repositories/user/types';
+import { getAppRelativePath } from '#server/utils/appPath';
 import {
   ApiTokenError,
   authenticateApiToken,
@@ -81,7 +76,7 @@ export async function getCurrentUser(event: H3Event) {
         {
           authorization: tokenAuthorization,
           method: event.method,
-          path: getRequestURL(event).pathname,
+          path: getAppRelativePath(event) ?? '',
         },
         {
           sha256: process.env.AWG_API_TOKEN_SHA256,

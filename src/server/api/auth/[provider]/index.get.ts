@@ -8,6 +8,7 @@ import * as client from 'openid-client';
 import { z } from 'zod';
 
 import { WG_ENV } from '#server/utils/config';
+import { getAppPath } from '#server/utils/appPath';
 import { buildOauthConfig } from '#server/utils/oauth';
 import { useWGSession } from '#server/utils/session';
 import { validateZod } from '#server/utils/types';
@@ -26,7 +27,7 @@ export default defineEventHandler(async (event) => {
 
   const host = getRequestHost(event);
   const protocol = WG_ENV.INSECURE ? 'http' : 'https';
-  const baseUri = `${protocol}://${host}/api/auth/${provider}`;
+  const baseUri = `${protocol}://${host}${getAppPath(event, `/api/auth/${provider}`)}`;
 
   let redirectUri = `${baseUri}/callback`;
   if (params.link) {

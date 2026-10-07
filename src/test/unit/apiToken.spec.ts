@@ -19,6 +19,7 @@ const auth = vi.hoisted(() => ({
   getRequestURL: vi.fn(),
   getSession: vi.fn(),
   useSession: vi.fn(),
+  baseURL: '/',
   isPasswordValid: vi.fn(),
   env: { INSECURE: false, DISABLE_PASSWORD_AUTH: false },
 }));
@@ -32,6 +33,9 @@ vi.mock('#server/utils/Database', () => ({
 vi.mock('#server/utils/config', () => ({ WG_ENV: auth.env }));
 vi.mock('#server/utils/password', () => ({
   isPasswordValid: auth.isPasswordValid,
+}));
+vi.mock('nitropack/runtime', () => ({
+  useRuntimeConfig: () => ({ app: { baseURL: auth.baseURL } }),
 }));
 vi.mock('h3', () => ({
   createError: (value: { statusCode: number; statusMessage: string }) =>
@@ -236,6 +240,7 @@ describe('Bearer and existing session/Basic authentication precedence', () => {
     vi.stubEnv('AWG_API_TOKEN_SHA256', digest);
     vi.stubEnv('AWG_API_TOKEN_USER', config.username);
     auth.env.DISABLE_PASSWORD_AUTH = false;
+    auth.baseURL = '/';
     auth.getHeader.mockReturnValue(undefined);
     auth.getRequestURL.mockReturnValue(
       new URL('https://example.com/api/v1/clients')
@@ -296,6 +301,33 @@ describe('Bearer and existing session/Basic authentication precedence', () => {
     expect(auth.getByUsername).toHaveBeenCalledExactlyOnceWith('integration');
     expect(auth.getSessionConfig).not.toHaveBeenCalled();
     expect(auth.isPasswordValid).not.toHaveBeenCalled();
+  });
+
+  it('authenticates the same integration token at a mounted API path', async () => {
+    auth.baseURL = '/private/panel/';
+    auth.getHeader.mockReturnValue(`Bearer ${token}`);
+    auth.getRequestURL.mockReturnValue(
+      new URL('https://example.com/private/panel/api/v1/clients')
+    );
+    await expect(getCurrentUser(event())).resolves.toBe(user);
+    expect(auth.getSessionConfig).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '/api/v1/clients',
+    '/private/panel-other/api/v1/clients',
+    '/private/panel/api/admin/interface',
+    '/private/panel/api/v1/clients/%31',
+  ])('keeps mounted Bearer credentials restricted at %s', async (path) => {
+    auth.baseURL = '/private/panel/';
+    auth.getHeader.mockReturnValue(`Bearer ${token}`);
+    auth.getRequestURL.mockReturnValue(new URL(path, 'https://example.com'));
+    auth.getSession.mockResolvedValue({ data: { userId: user.id } });
+    await expect(getCurrentUser(event())).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    expect(auth.getSessionConfig).not.toHaveBeenCalled();
+    expect(auth.getUser).not.toHaveBeenCalled();
   });
 
   it('leaves cookie sessions with verified TOTP working', async () => {

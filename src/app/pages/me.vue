@@ -160,7 +160,7 @@
                   :key="provider"
                   class="flex items-center gap-2 p-2"
                   as="a"
-                  :href="`/api/auth/${provider}?link=true`"
+                  :href="appPath(`/api/auth/${provider}?link=true`)"
                 >
                   <IconsBrandsProvider :provider="provider" class="h-4 w-4" />
                   <span>{{ info.friendlyName }}</span>
@@ -177,6 +177,7 @@
 <script setup lang="ts">
 import { encodeQR } from 'qr';
 
+const appPath = useAppPath();
 const authStore = useAuthStore();
 
 const { data: authMethods } = await useFetch('/api/auth/methods');

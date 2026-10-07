@@ -7,6 +7,12 @@ import { integrationOpenApi } from '../../server/utils/integrationOpenApi';
 import { isApiTokenOperationAllowed } from '../../server/utils/apiToken';
 
 describe('versioned integration contract', () => {
+  test('publishes the mounted API URL without changing its operation paths', () => {
+    const nested = integrationOpenApi('/private/panel/');
+    expect(nested.servers).toEqual([{ url: '/private/panel/api/v1' }]);
+    expect(nested.paths).toEqual(integrationOpenApi().paths);
+  });
+
   test('describes every v1 handler and matches the service-token allowlist', async () => {
     const root = fileURLToPath(
       new URL('../../server/api/v1/', import.meta.url)

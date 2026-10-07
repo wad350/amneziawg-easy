@@ -2,6 +2,7 @@ import { createError, defineEventHandler, sendRedirect } from 'h3';
 
 import Database from '#server/utils/Database';
 import { SERVER_DEBUG } from '#server/utils/config';
+import { getAppPath } from '#server/utils/appPath';
 import { buildOauthConfig, getUserInfo } from '#server/utils/oauth';
 import { useWGSession } from '#server/utils/session';
 import { assertUnreachable } from '#server/utils/types';
@@ -55,7 +56,7 @@ export default defineEventHandler(async (event) => {
           oauth_state: undefined,
           oauth_verifier: undefined,
         });
-        return sendRedirect(event, '/login/2fa');
+        return sendRedirect(event, getAppPath(event, '/login/2fa'));
       case 'USER_DISABLED':
         throw createError({
           statusCode: 401,
@@ -93,5 +94,5 @@ export default defineEventHandler(async (event) => {
     `New OAuth Session: ${data.id} for ${result.user.id} (${result.user.username}) with ${provider}`
   );
 
-  return sendRedirect(event, '/');
+  return sendRedirect(event, getAppPath(event, '/'));
 });

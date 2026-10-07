@@ -2,6 +2,7 @@ import z from 'zod';
 
 import { IntegrationRulesUpdateSchema } from '../../shared/types/integrationApi';
 import { RoutingRuleSchema } from '../../shared/types/routing';
+import { resolveAppPath } from '../../shared/utils/appPath';
 
 import {
   IntegrationClientCreateSchema,
@@ -168,7 +169,7 @@ const operation = (
 });
 
 /** Schemas contain no live server data, profiles, account names or credentials. */
-export function integrationOpenApi() {
+export function integrationOpenApi(baseURL = '/') {
   return {
     openapi: '3.1.0',
     info: {
@@ -177,7 +178,7 @@ export function integrationOpenApi() {
       description:
         'Versioned client and rule management using existing account permissions. Configuration and QR exports contain credentials; all other responses exclude them. Request refinements are also enforced by the server.',
     },
-    servers: [{ url: '/api/v1' }],
+    servers: [{ url: resolveAppPath(baseURL, '/api/v1') }],
     security: [{ BearerToken: [] }, { BasicAuth: [] }, { SessionCookie: [] }],
     components: {
       securitySchemes: {
