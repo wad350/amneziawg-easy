@@ -3,6 +3,8 @@ import { randomInt } from 'node:crypto';
 
 import { createDebug } from 'obug';
 
+import { setIntervalImmediately } from '../../shared/utils/time';
+
 import Database from '#server/utils/Database';
 import { mergeClientStatuses } from '#server/utils/clientStatus';
 import { OLD_ENV, WG_ENV } from '#server/utils/config';
@@ -18,7 +20,6 @@ import {
   startRouting,
   stopRouting,
 } from '#server/utils/routingRuntime';
-import { setIntervalImmediately } from '#shared/utils/time';
 import type { InterfaceType } from '#db/repositories/interface/types';
 import type { ClientQueryType } from '#db/repositories/client/types';
 
@@ -27,14 +28,21 @@ const WG_DEBUG = createDebug('WireGuard');
 const generateRandomHeaderValue = () => randomInt(5, 2147483647);
 
 class WireGuard {
+  #configQueue: Promise<unknown> = Promise.resolve();
+
   /**
    * Save and sync config
    */
-  async saveConfig() {
-    const wgInterface = await Database.interfaces.get();
-    await this.#saveWireguardConfig(wgInterface);
-    await this.#syncWireguardConfig(wgInterface);
-    await this.#applyFirewallRules(wgInterface);
+  saveConfig() {
+    const save = async () => {
+      const wgInterface = await Database.interfaces.get();
+      await this.#saveWireguardConfig(wgInterface);
+      await this.#syncWireguardConfig(wgInterface);
+      await this.#applyFirewallRules(wgInterface);
+    };
+    const result = this.#configQueue.then(save, save);
+    this.#configQueue = result.catch(() => {});
+    return result;
   }
 
   /**

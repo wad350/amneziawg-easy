@@ -9,6 +9,10 @@ services:
       AWG_FORCE_USERSPACE: "true"
       AWG_ISOLATED: "true"
       AWG_ROUTING_DEBUG: ${AWG_ROUTING_DEBUG:-false}
+      DEBUG: ${AWG_DEBUG:-}
+      # Optional backend integration credential: store only its SHA-256 digest.
+      AWG_API_TOKEN_SHA256: ${AWG_API_TOKEN_SHA256:-}
+      AWG_API_TOKEN_USER: ${AWG_API_TOKEN_USER:-}
       DISABLE_IPV6: "true"
       INIT_ENABLED: "true"
       INIT_IPV4_CIDR: 172.31.63.0/24

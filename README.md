@@ -6,6 +6,8 @@ Run it as a **separate installation**: a new volume, unused UDP port and new sub
 
 Read the [fork setup and feature guide](docs/amneziawg-31.md) before running `docker compose up -d --build`. The administration port is loopback-only and requires an HTTPS reverse proxy or a protected SSH tunnel. Routing starts disabled; importing an outbound requires a newly allocated peer that no other tunnel uses.
 
+The [versioned integration API](docs/content/advanced/api.md) provides client management, original configuration/QR exports and routing rules with separate service-token authentication. Its OpenAPI contract is available at `/api/v1/openapi.json` after authentication.
+
 The following documentation and credits describe the upstream project.
 
 ## WireGuard Easy upstream

@@ -8,6 +8,7 @@ import {
   type RoutingConfig,
   type RoutingStatus,
 } from '../../shared/types/routing';
+import type { IntegrationRulesUpdate } from '../../shared/types/integrationApi';
 
 import {
   egressInterface,
@@ -36,6 +37,7 @@ import {
   writeRoutingFile,
   ROUTING_DATA_DIR,
 } from './routingStore';
+import { mergeRoutingRules } from './routingRevision';
 
 const exec = promisify(execFile);
 const RUNTIME_ROOT = `${ROUTING_DATA_DIR}/.awg-easy-routing-runtime`;
@@ -683,36 +685,55 @@ export function saveAndApplyRouting(
   context: RoutingContext,
   apply = false
 ): Promise<RoutingStatus> {
-  return serialized(async () => {
-    const validated = validateRoutingConfig(config, context);
-    const previousDraft = await loadRoutingConfig();
-    const previousApplied = await loadAppliedRoutingConfig();
-    const previousRuntime = current
-      ? { config: current.config, context: current.context }
-      : null;
-    if (apply)
-      await applyInternal(validated, context, {
-        config: previousApplied,
-        context,
-      });
-    try {
-      await saveRoutingConfig(validated);
-      if (apply) await saveAppliedRoutingConfig(validated);
-    } catch {
-      await saveRoutingConfig(previousDraft).catch(() => {});
-      if (apply) {
-        await saveAppliedRoutingConfig(previousApplied).catch(() => {});
-        await applyInternal(
-          previousRuntime?.config ?? previousApplied,
-          previousRuntime?.context ?? context,
-          previousRuntime ?? { config: previousApplied, context }
-        );
-      }
-      throw new RoutingValidationError(
-        'Private routing save failed; runtime rollback was attempted'
+  return serialized(() => saveAndApplyInternal(config, context, apply));
+}
+
+async function saveAndApplyInternal(
+  config: RoutingConfig,
+  context: RoutingContext,
+  apply: boolean
+): Promise<RoutingStatus> {
+  const validated = validateRoutingConfig(config, context);
+  const previousDraft = await loadRoutingConfig();
+  const previousApplied = await loadAppliedRoutingConfig();
+  const previousRuntime = current
+    ? { config: current.config, context: current.context }
+    : null;
+  if (apply)
+    await applyInternal(validated, context, {
+      config: previousApplied,
+      context,
+    });
+  try {
+    await saveRoutingConfig(validated);
+    if (apply) await saveAppliedRoutingConfig(validated);
+  } catch {
+    await saveRoutingConfig(previousDraft).catch(() => {});
+    if (apply) {
+      await saveAppliedRoutingConfig(previousApplied).catch(() => {});
+      await applyInternal(
+        previousRuntime?.config ?? previousApplied,
+        previousRuntime?.context ?? context,
+        previousRuntime ?? { config: previousApplied, context }
       );
     }
-    return getRoutingStatus();
+    throw new RoutingValidationError(
+      'Private routing save failed; runtime rollback was attempted'
+    );
+  }
+  return getRoutingStatus();
+}
+
+/** Check the revision and preserve private egresses in the same legacy write queue. */
+export function saveRoutingRulesWithRevision(
+  update: IntegrationRulesUpdate,
+  context: RoutingContext
+): Promise<{ config: RoutingConfig; status: RoutingStatus }> {
+  return serialized(async () => {
+    const current = await loadRoutingConfig();
+    const config = mergeRoutingRules(current, update);
+    const status = await saveAndApplyInternal(config, context, update.apply);
+    return { config, status };
   });
 }
 

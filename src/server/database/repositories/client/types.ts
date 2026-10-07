@@ -47,6 +47,29 @@ export type UpdateClientType = Omit<
   | 'awgSettings'
 > & { awgSettings?: AwgSettings | null };
 
+export type ClientEditableFieldsType = Partial<
+  Pick<
+    UpdateClientType,
+    | 'name'
+    | 'enabled'
+    | 'expiresAt'
+    | 'dns'
+    | 'allowedIps'
+    | 'mtu'
+    | 'persistentKeepalive'
+  >
+>;
+
+export class ClientEditableUpdateError extends Error {
+  constructor(
+    readonly statusCode: 404 | 422,
+    message: string
+  ) {
+    super(message);
+    this.name = 'ClientEditableUpdateError';
+  }
+}
+
 const name = z
   .string({ message: t('zod.client.name') })
   .min(1, t('zod.client.name'))
