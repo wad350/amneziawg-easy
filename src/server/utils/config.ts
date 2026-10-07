@@ -75,6 +75,9 @@ if (!isAbsolute(WG_ENV.DATA_DIR)) {
   throw new Error('WG_DATA_DIR must be an absolute path');
 }
 
+// The database and newly created runtime files contain VPN credentials.
+if (process.platform !== 'win32') process.umask(0o077);
+
 if (WG_ENV.OAUTH_PROVIDERS && WG_ENV.OAUTH_PROVIDERS.length > 0) {
   SERVER_DEBUG(`
 Enabled OAuth providers: ${WG_ENV.OAUTH_PROVIDERS.join(', ')}

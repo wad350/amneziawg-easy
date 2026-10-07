@@ -99,7 +99,7 @@ RUN apk add --no-cache \
 # Official sing-box release archives use the glibc loader on Linux.
 RUN /usr/bin/sing-box version
 
-RUN mkdir -p /etc/amnezia
+RUN mkdir -p /etc/amnezia /etc/wireguard && chmod 700 /etc/wireguard
 RUN ln -s /etc/wireguard /etc/amnezia/amneziawg
 
 # Use iptables-legacy
