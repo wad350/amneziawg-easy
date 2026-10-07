@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { randomInt } from 'node:crypto';
 
 import { createDebug } from 'obug';
 
@@ -9,14 +10,21 @@ import { firewall } from '#server/utils/firewall';
 import { encodeQRCode } from '#server/utils/qr';
 import type { ID } from '#server/utils/types';
 import { wg } from '#server/utils/wgHelper';
+import { assertAwgIsolation } from '#server/utils/runtimeIsolation';
+import { generateAwg31Parameters } from '#server/utils/amneziawg';
+import { getRoutingContext } from '#server/utils/routingContext';
+import {
+  armAppliedRoutingGate,
+  startRouting,
+  stopRouting,
+} from '#server/utils/routingRuntime';
 import { setIntervalImmediately } from '#shared/utils/time';
 import type { InterfaceType } from '#db/repositories/interface/types';
 import type { ClientQueryType } from '#db/repositories/client/types';
 
 const WG_DEBUG = createDebug('WireGuard');
 
-const generateRandomHeaderValue = () =>
-  Math.floor(Math.random() * 2147483642) + 5;
+const generateRandomHeaderValue = () => randomInt(5, 2147483647);
 
 class WireGuard {
   /**
@@ -74,7 +82,7 @@ class WireGuard {
 
     WG_DEBUG('Saving Config...');
     await fs.writeFile(
-      `/etc/wireguard/${wgInterface.name}.conf`,
+      `${WG_ENV.DATA_DIR}/${wgInterface.name}.conf`,
       result.join('\n\n'),
       {
         mode: 0o600,
@@ -165,9 +173,38 @@ class WireGuard {
   }
 
   async Startup() {
+    await assertAwgIsolation(WG_ENV.AWG_ISOLATED);
     WG_DEBUG('Starting WireGuard...');
     // let as it has to refetch if keys change
     let wgInterface = await Database.interfaces.get();
+
+    if (WG_ENV.AWG_ISOLATED && wgInterface.ipv4Cidr.startsWith('10.')) {
+      throw new Error(
+        'The isolated project refuses VPN networks inside 10.0.0.0/8'
+      );
+    }
+    const freshInterface =
+      wgInterface.privateKey === '---default---' &&
+      wgInterface.publicKey === '---default---';
+    if (
+      freshInterface &&
+      WG_ENV.WG_EXECUTABLE === 'awg' &&
+      (await Database.clients.getAll()).length === 0
+    ) {
+      const parameters = generateAwg31Parameters();
+      await Database.interfaces.update({
+        ...wgInterface,
+        ...parameters,
+        mtu: 1340,
+      });
+      await Database.userConfigs.update({
+        defaultMtu: 1340,
+        defaultJC: parameters.jC,
+        defaultJMin: parameters.jMin,
+        defaultJMax: parameters.jMax,
+      });
+      wgInterface = await Database.interfaces.get();
+    }
 
     // default interface has no keys
     if (
@@ -183,7 +220,13 @@ class WireGuard {
       WG_DEBUG('New Wireguard Keys generated successfully.');
     }
 
-    if (wgInterface.h1 === '0') {
+    if (
+      wgInterface.h1 === '0' &&
+      wgInterface.h2 === '0' &&
+      wgInterface.h3 === '0' &&
+      wgInterface.h4 === '0' &&
+      (await Database.clients.getAll()).length === 0
+    ) {
       WG_DEBUG('Generating random AmneziaWG obfuscation parameters...');
       const headers = new Set<number>();
 
@@ -197,10 +240,11 @@ class WireGuard {
       wgInterface.h3 = String(h3)!;
       wgInterface.h4 = String(h4)!;
 
-      Database.interfaces.update(wgInterface);
+      await Database.interfaces.update(wgInterface);
     }
 
     WG_DEBUG(`Starting Wireguard Interface ${wgInterface.name}...`);
+    await armAppliedRoutingGate(await getRoutingContext());
     await this.#saveWireguardConfig(wgInterface);
     await wg.down(wgInterface.name).catch(() => {});
     await wg.up(wgInterface.name).catch((err) => {
@@ -238,6 +282,8 @@ class WireGuard {
     await this.#applyFirewallRules(wgInterface);
     WG_DEBUG('Firewall rules applied successfully.');
 
+    await startRouting(await getRoutingContext());
+
     WG_DEBUG('Starting Cron Job...');
     await this.startCronJob();
     WG_DEBUG('Cron Job started successfully.');
@@ -257,11 +303,15 @@ class WireGuard {
   async Shutdown() {
     const wgInterface = await Database.interfaces.get();
     await wg.down(wgInterface.name).catch(() => {});
+    await stopRouting();
   }
 
   async Restart() {
+    await armAppliedRoutingGate(await getRoutingContext());
+    await stopRouting({ preserveGate: true });
     const wgInterface = await Database.interfaces.get();
     await wg.restart(wgInterface.name);
+    await startRouting(await getRoutingContext());
   }
 
   async cronJob() {

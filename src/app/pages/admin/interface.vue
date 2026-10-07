@@ -29,6 +29,24 @@
       </FormGroup>
       <FormGroup v-if="globalStore.information?.isAwg">
         <FormHeading>{{ $t('awg.obfuscationParameters') }}</FormHeading>
+        <p
+          class="col-span-full rounded-lg border border-amber-300 p-3 text-sm dark:border-amber-700"
+          role="note"
+        >
+          {{ $t('awg31.sharedWarning') }}
+        </p>
+        <BaseSecondaryButton
+          type="button"
+          class="col-span-full justify-center"
+          :disabled="generating"
+          @click="generate"
+        >
+          <IconsSparkles class="mr-2 size-4" />
+          {{ $t(generating ? 'general.loading' : 'awg31.generate') }}
+        </BaseSecondaryButton>
+        <p v-if="generated" class="col-span-full text-sm" role="status">
+          {{ $t('awg31.generatedPreview') }}
+        </p>
 
         <FormNullNumberField
           id="jC"
@@ -130,6 +148,9 @@
           :description="$t('awg.i5Description')"
         />
       </FormGroup>
+      <FormGroup v-if="globalStore.information?.isAwg">
+        <AwgSettings v-model="data.awgSettings" prefix="interface-awg31" />
+      </FormGroup>
       <FormGroup>
         <FormHeading>{{ $t('admin.interface.firewall') }}</FormHeading>
         <FormSwitchField
@@ -180,6 +201,27 @@ const { data: _data, refresh } = await useFetch(`/api/admin/interface`, {
 });
 
 const data = toRef(_data.value);
+const generating = ref(false);
+const generated = ref(false);
+const toast = useToast();
+
+async function generate() {
+  generating.value = true;
+  try {
+    const preview = await $fetch('/api/admin/interface/generate', {
+      method: 'post',
+    });
+    if (data.value) Object.assign(data.value, preview);
+    generated.value = true;
+  } catch (error) {
+    toast.showToast({
+      type: 'error',
+      message: error instanceof Error ? error.message : t('toast.unknown'),
+    });
+  } finally {
+    generating.value = false;
+  }
+}
 
 const _submit = useSubmit(
   (data) =>
@@ -203,6 +245,7 @@ function submit() {
 }
 
 async function revert() {
+  generated.value = false;
   await refresh();
   data.value = toRef(_data.value).value;
 }

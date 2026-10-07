@@ -1,4 +1,14 @@
-# WireGuard Easy
+# AmneziaWG Easy
+
+An AmneziaWG 3.1 fork of wg-easy v15.4.0 with configuration generation and optional domain/IP routing through independent AWG outbounds. The original client management, authentication, QR exports and traffic charts are retained.
+
+Run it as a **separate installation**: a new volume, unused UDP port and new subnet. The supplied Compose file forces the standalone AmneziaWG Go implementation to use a Linux TUN in its own Docker bridge namespace. It does not load kernel modules or attach to an existing VPN interface. Do not mount a live installation's database or configuration directory.
+
+Read the [fork setup and feature guide](docs/amneziawg-31.md) before running `docker compose up -d --build`. The administration port is loopback-only and requires an HTTPS reverse proxy or a protected SSH tunnel. Routing starts disabled; importing an outbound requires a newly allocated peer that no other tunnel uses.
+
+The following documentation and credits describe the upstream project.
+
+## WireGuard Easy upstream
 
 [![Build & Publish latest Image](https://github.com/wg-easy/wg-easy/actions/workflows/deploy.yml/badge.svg)](https://github.com/wg-easy/wg-easy/actions/workflows/deploy.yml)
 [![Lint](https://github.com/wg-easy/wg-easy/actions/workflows/lint.yml/badge.svg?branch=master)](https://github.com/wg-easy/wg-easy/actions/workflows/lint.yml)

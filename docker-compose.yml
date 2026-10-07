@@ -1,44 +1,53 @@
-volumes:
-  etc_wireguard:
+name: amneziawg-easy
 
 services:
-  wg-easy:
-    #environment:
-    #  Optional:
-    #  - PORT=51821
-    #  - HOST=0.0.0.0
-    #  - INSECURE=false
-
-    image: ghcr.io/wg-easy/wg-easy:15
-    container_name: wg-easy
-    networks:
-      wg:
-        ipv4_address: 10.42.42.42
-        ipv6_address: fdcc:ad94:bacf:61a3::2a
+  awg-easy:
+    build: .
+    image: amneziawg-easy:local
+    environment:
+      VPN_PROTOCOL: amneziawg
+      AWG_FORCE_USERSPACE: "true"
+      AWG_ISOLATED: "true"
+      AWG_ROUTING_DEBUG: ${AWG_ROUTING_DEBUG:-false}
+      DISABLE_IPV6: "true"
+      INIT_ENABLED: "true"
+      INIT_IPV4_CIDR: 172.31.63.0/24
+      INIT_IPV6_CIDR: fd31:63::/64
+      TZ: Europe/Moscow
+      # Set these in a private .env for unattended setup. Otherwise use the wizard.
+      INIT_USERNAME: ${AWG_ADMIN_USERNAME:-}
+      INIT_PASSWORD: ${AWG_ADMIN_PASSWORD:-}
+      INIT_HOST: ${AWG_PUBLIC_IP:-}
+      INIT_PORT: ${AWG_UDP_PORT:-38472}
     volumes:
-      - etc_wireguard:/etc/wireguard
-      - /lib/modules:/lib/modules:ro
+      - awg_easy_data:/etc/wireguard
+    devices:
+      - /dev/net/tun:/dev/net/tun
     ports:
-      - "51820:51820/udp"
-      - "51821:51821/tcp"
-    restart: unless-stopped
+      - "${AWG_UDP_PORT:-38472}:${AWG_UDP_PORT:-38472}/udp"
+      - "127.0.0.1:${AWG_UI_PORT:-28554}:51821/tcp"
+    networks:
+      - awg_easy
     cap_add:
       - NET_ADMIN
-      - SYS_MODULE
-      # - NET_RAW # ⚠️ Uncomment if using Podman
     sysctls:
-      - net.ipv4.ip_forward=1
-      - net.ipv4.conf.all.src_valid_mark=1
-      - net.ipv6.conf.all.disable_ipv6=0
-      - net.ipv6.conf.all.forwarding=1
-      - net.ipv6.conf.default.forwarding=1
+      net.ipv4.ip_forward: "1"
+      # TProxy marks select a local-delivery table; ignore them for reverse lookup.
+      net.ipv4.conf.all.src_valid_mark: "0"
+      net.ipv4.conf.all.rp_filter: "0"
+      net.ipv4.conf.default.rp_filter: "0"
+      net.ipv6.conf.all.disable_ipv6: "1"
+    cpus: 2
+    mem_limit: 1g
+    pids_limit: 512
+    restart: unless-stopped
+
+volumes:
+  awg_easy_data:
 
 networks:
-  wg:
+  awg_easy:
     driver: bridge
-    enable_ipv6: true
     ipam:
-      driver: default
       config:
-        - subnet: 10.42.42.0/24
-        - subnet: fdcc:ad94:bacf:61a3::/64
+        - subnet: 172.30.63.0/24

@@ -3,6 +3,7 @@ import { int, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 import { hooks } from '../hooks/schema';
 import { userConfig } from '../userConfig/schema';
+import type { AwgSettings } from '../../../../shared/types/amneziawg';
 
 // maybe support multiple interfaces in the future
 export const wgInterface = sqliteTable('interfaces_table', {
@@ -31,6 +32,7 @@ export const wgInterface = sqliteTable('interfaces_table', {
   i3: text(),
   i4: text(),
   i5: text(),
+  awgSettings: text('awg_settings', { mode: 'json' }).$type<AwgSettings>(),
   // does nothing yet
   enabled: int({ mode: 'boolean' }).notNull(),
   // Enable per-client firewall filtering via iptables

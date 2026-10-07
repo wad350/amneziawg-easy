@@ -2,8 +2,17 @@ import type { InferSelectModel } from 'drizzle-orm';
 import z from 'zod';
 import { isIPv4, isIPv6 } from 'is-ip';
 
+import type { AwgSettings } from '../../../../shared/types/amneziawg';
+
 import type { client } from './schema';
 
+import {
+  AwgCpsSchema,
+  AwgClientSettingsSchema,
+  AwgJcSchema,
+  AwgJunkSizeSchema,
+  refineAwgJunk,
+} from '#server/utils/amneziawg';
 import {
   AddressSchema,
   AllowedIpsSchema,
@@ -11,10 +20,6 @@ import {
   EnabledSchema,
   FirewallIpsSchema,
   HookSchema,
-  ISchema,
-  JcSchema,
-  JmaxSchema,
-  JminSchema,
   MtuSchema,
   PersistentKeepaliveSchema,
   controlStringRefine,
@@ -34,8 +39,13 @@ export type CreateClientType = Omit<
 
 export type UpdateClientType = Omit<
   CreateClientType,
-  'privateKey' | 'publicKey' | 'preSharedKey' | 'userId' | 'interfaceId'
->;
+  | 'privateKey'
+  | 'publicKey'
+  | 'preSharedKey'
+  | 'userId'
+  | 'interfaceId'
+  | 'awgSettings'
+> & { awgSettings?: AwgSettings | null };
 
 const name = z
   .string({ message: t('zod.client.name') })
@@ -71,6 +81,7 @@ const serverAllowedIps = z.array(AddressSchema, {
 export const ClientCreateSchema = z.object({
   name: name,
   expiresAt: expiresAt,
+  awgSettings: AwgClientSettingsSchema.nullable().optional(),
 });
 
 export type ClientCreateType = z.infer<typeof ClientCreateSchema>;
@@ -87,32 +98,35 @@ export const ClientQuerySchema = z.object({
 export type ClientQueryType = z.infer<typeof ClientQuerySchema>;
 
 export const ClientUpdateSchema = schemaForType<UpdateClientType>()(
-  z.object({
-    name: name,
-    enabled: EnabledSchema,
-    expiresAt: expiresAt,
-    ipv4Address: address4,
-    ipv6Address: address6,
-    preUp: HookSchema,
-    postUp: HookSchema,
-    preDown: HookSchema,
-    postDown: HookSchema,
-    allowedIps: AllowedIpsSchema.nullable(),
-    serverAllowedIps: serverAllowedIps,
-    firewallIps: FirewallIpsSchema.nullable(),
-    mtu: MtuSchema,
-    jC: JcSchema,
-    jMin: JminSchema,
-    jMax: JmaxSchema,
-    i1: ISchema,
-    i2: ISchema,
-    i3: ISchema,
-    i4: ISchema,
-    i5: ISchema,
-    persistentKeepalive: PersistentKeepaliveSchema,
-    serverEndpoint: AddressSchema.nullable(),
-    dns: DnsSchema.nullable(),
-  })
+  z
+    .object({
+      name: name,
+      enabled: EnabledSchema,
+      expiresAt: expiresAt,
+      ipv4Address: address4,
+      ipv6Address: address6,
+      preUp: HookSchema,
+      postUp: HookSchema,
+      preDown: HookSchema,
+      postDown: HookSchema,
+      allowedIps: AllowedIpsSchema.nullable(),
+      serverAllowedIps: serverAllowedIps,
+      firewallIps: FirewallIpsSchema.nullable(),
+      mtu: MtuSchema,
+      jC: AwgJcSchema,
+      jMin: AwgJunkSizeSchema,
+      jMax: AwgJunkSizeSchema,
+      i1: AwgCpsSchema,
+      i2: AwgCpsSchema,
+      i3: AwgCpsSchema,
+      i4: AwgCpsSchema,
+      i5: AwgCpsSchema,
+      awgSettings: AwgClientSettingsSchema.nullable().optional(),
+      persistentKeepalive: PersistentKeepaliveSchema,
+      serverEndpoint: AddressSchema.nullable(),
+      dns: DnsSchema.nullable(),
+    })
+    .superRefine(refineAwgJunk)
 );
 
 const clientId = z.coerce.number({ message: t('zod.client.id') });

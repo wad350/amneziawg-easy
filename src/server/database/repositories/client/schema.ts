@@ -4,6 +4,7 @@ import { int, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { wgInterface } from '../interface/schema';
 import { oneTimeLink } from '../oneTimeLink/schema';
 import { user } from '../user/schema';
+import type { AwgSettings } from '../../../../shared/types/amneziawg';
 
 /** null means use value from userConfig */
 
@@ -52,6 +53,7 @@ export const client = sqliteTable(
     i3: text(),
     i4: text(),
     i5: text(),
+    awgSettings: text('awg_settings', { mode: 'json' }).$type<AwgSettings>(),
     dns: text({ mode: 'json' }).$type<string[]>(),
     serverEndpoint: text('server_endpoint'),
     enabled: int({ mode: 'boolean' }).notNull(),

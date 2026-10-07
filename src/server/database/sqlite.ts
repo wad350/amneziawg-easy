@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate as drizzleMigrate } from 'drizzle-orm/libsql/migrator';
 import { createClient } from '@libsql/client';
@@ -16,7 +18,9 @@ import { WG_ENV, WG_INITIAL_ENV } from '#server/utils/config';
 
 const DB_DEBUG = createDebug('Database');
 
-const client = createClient({ url: 'file:/etc/wireguard/wg-easy.db' });
+const client = createClient({
+  url: `file:${path.join(WG_ENV.DATA_DIR, 'wg-easy.db')}`,
+});
 const db = drizzle({ client, schema });
 
 export async function connect() {

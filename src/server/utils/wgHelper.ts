@@ -4,10 +4,19 @@ import { stringifyIp } from 'ip-bigint';
 import { removeNewlines, iptablesTemplate } from '#server/utils/template';
 import { exec } from '#server/utils/cmd';
 import { WG_ENV } from '#server/utils/config';
+import {
+  generatePrivateKey,
+  derivePublicKey,
+  generatePreSharedKey,
+} from '#server/utils/wireguardKeys';
 import type { ClientType } from '#db/repositories/client/types';
 import type { InterfaceType } from '#db/repositories/interface/types';
 import type { UserConfigType } from '#db/repositories/userConfig/types';
 import type { HooksType } from '#db/repositories/hooks/types';
+import {
+  resolveClientAwgSettings,
+  serializeAwgParameters,
+} from '#server/utils/amneziawg';
 
 type Options = {
   enableIpv6?: boolean;
@@ -61,28 +70,7 @@ AllowedIPs = ${allowedIps.join(', ')}${extraLines.length ? `\n${extraLines.join(
     let awgLines: string[] = [];
 
     if (wgExecutable === 'awg') {
-      const parameters = {
-        Jc: wgInterface.jC,
-        Jmin: wgInterface.jMin,
-        Jmax: wgInterface.jMax,
-        S1: wgInterface.s1,
-        S2: wgInterface.s2,
-        S3: wgInterface.s3,
-        S4: wgInterface.s4,
-        H1: wgInterface.h1,
-        H2: wgInterface.h2,
-        H3: wgInterface.h3,
-        H4: wgInterface.h4,
-        I1: wgInterface.i1,
-        I2: wgInterface.i2,
-        I3: wgInterface.i3,
-        I4: wgInterface.i4,
-        I5: wgInterface.i5,
-      } as const;
-
-      awgLines = Object.entries(parameters)
-        .filter(([_, value]) => !!value)
-        .map(([key, value]) => `${key} = ${value}`);
+      awgLines = serializeAwgParameters(wgInterface);
     }
 
     const extraLines = [...awgLines].filter((v) => v !== null);
@@ -128,30 +116,24 @@ PostDown = ${iptablesTemplate(hooks.postDown, wgInterface)}`;
       dnsServers.length > 0 ? `DNS = ${dnsServers.join(', ')}` : null;
 
     let awgLines: string[] = [];
+    const clientAwgSettings =
+      wgExecutable === 'awg'
+        ? resolveClientAwgSettings(wgInterface.awgSettings, client.awgSettings)
+        : null;
 
     if (wgExecutable === 'awg') {
-      const parameters = {
-        Jc: client.jC,
-        Jmin: client.jMin,
-        Jmax: client.jMax,
-        S1: wgInterface.s1,
-        S2: wgInterface.s2,
-        S3: wgInterface.s3,
-        S4: wgInterface.s4,
-        H1: wgInterface.h1,
-        H2: wgInterface.h2,
-        H3: wgInterface.h3,
-        H4: wgInterface.h4,
-        I1: client.i1,
-        I2: client.i2,
-        I3: client.i3,
-        I4: client.i4,
-        I5: client.i5,
-      } as const;
-
-      awgLines = Object.entries(parameters)
-        .filter(([_, value]) => !!value)
-        .map(([key, value]) => `${key} = ${value}`);
+      awgLines = serializeAwgParameters({
+        ...wgInterface,
+        jC: client.jC,
+        jMin: client.jMin,
+        jMax: client.jMax,
+        i1: client.i1,
+        i2: client.i2,
+        i3: client.i3,
+        i4: client.i4,
+        i5: client.i5,
+        awgSettings: clientAwgSettings,
+      });
     }
 
     const extraLines = [dnsLine, ...hookLines, ...awgLines].filter(
@@ -167,22 +149,20 @@ ${extraLines.length ? `${extraLines.join('\n')}\n` : ''}
 PublicKey = ${wgInterface.publicKey}
 PresharedKey = ${client.preSharedKey}
 AllowedIPs = ${(client.allowedIps ?? userConfig.defaultAllowedIps).join(', ')}
-PersistentKeepalive = ${client.persistentKeepalive}
+PersistentKeepalive = ${wgExecutable === 'awg' ? (clientAwgSettings?.persistentKeepaliveRange ?? client.persistentKeepalive) : client.persistentKeepalive}
 Endpoint = ${userConfig.host}:${userConfig.port}`;
   },
 
   generatePrivateKey: () => {
-    return exec(`${wgExecutable} genkey`);
+    return Promise.resolve(generatePrivateKey());
   },
 
   getPublicKey: (privateKey: string) => {
-    return exec(`echo ${privateKey} | ${wgExecutable} pubkey`, {
-      log: `echo ***hidden*** | ${wgExecutable} pubkey`,
-    });
+    return Promise.resolve(derivePublicKey(privateKey));
   },
 
   generatePreSharedKey: () => {
-    return exec(`${wgExecutable} genpsk`);
+    return Promise.resolve(generatePreSharedKey());
   },
 
   up: (infName: string) => {
@@ -210,47 +190,44 @@ Endpoint = ${userConfig.host}:${userConfig.port}`;
       log: false,
     });
 
-    type wgDumpLine = [
-      string,
-      string,
-      string,
-      string,
-      string,
-      string,
-      string,
-      string,
-    ];
-
-    return rawDump
-      .trim()
-      .split('\n')
-      .slice(1)
-      .map((line) => {
-        const splitLines = line.split('\t');
-        const [
-          publicKey,
-          preSharedKey,
-          endpoint,
-          allowedIps,
-          latestHandshakeAt,
-          transferRx,
-          transferTx,
-          persistentKeepalive,
-        ] = splitLines as wgDumpLine;
-
-        return {
-          publicKey,
-          preSharedKey,
-          endpoint: endpoint === '(none)' ? null : endpoint,
-          allowedIps,
-          latestHandshakeAt:
-            latestHandshakeAt === '0'
-              ? null
-              : new Date(Number.parseInt(`${latestHandshakeAt}000`)),
-          transferRx: Number.parseInt(transferRx),
-          transferTx: Number.parseInt(transferTx),
-          persistentKeepalive: persistentKeepalive,
-        };
-      });
+    return parseWgDump(rawDump);
   },
 };
+
+/** AWG3.1 has a longer interface row, but the eight peer columns are unchanged. */
+export function parseWgDump(rawDump: string) {
+  return rawDump
+    .trim()
+    .split('\n')
+    .slice(1)
+    .filter(Boolean)
+    .map((line) => {
+      const fields = line.split('\t');
+      if (fields.length !== 8)
+        throw new Error('Unexpected WireGuard peer dump');
+      const [
+        publicKey,
+        preSharedKey,
+        endpoint,
+        allowedIps,
+        handshake,
+        rx,
+        tx,
+        keepalive,
+      ] = fields;
+      if (![handshake, rx, tx].every((value) => /^\d+$/.test(value!))) {
+        throw new Error('Invalid WireGuard peer counters');
+      }
+      return {
+        publicKey: publicKey!,
+        preSharedKey: preSharedKey!,
+        endpoint: endpoint === '(none)' ? null : endpoint!,
+        allowedIps: allowedIps!,
+        latestHandshakeAt:
+          handshake === '0' ? null : new Date(Number(handshake) * 1000),
+        transferRx: Number(rx),
+        transferTx: Number(tx),
+        persistentKeepalive: keepalive!,
+      };
+    });
+}

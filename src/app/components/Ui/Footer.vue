@@ -24,6 +24,13 @@
       ·
       <a
         class="hover:underline"
+        href="https://github.com/wad350/amneziawg-easy/tree/codex/amneziawg-31"
+        target="_blank"
+        >AmneziaWG fork source</a
+      >
+      ·
+      <a
+        class="hover:underline"
         href="https://github.com/wg-easy/wg-easy#donate"
         target="_blank"
         >{{ $t('layout.donate') }}</a

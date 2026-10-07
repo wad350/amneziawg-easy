@@ -15,6 +15,11 @@ import type { ID } from '#server/utils/types';
 import { wg } from '#server/utils/wgHelper';
 import type { DBType } from '#db/sqlite';
 import { wgInterface, userConfig } from '#db/schema';
+import {
+  AwgParametersSchema,
+  resolveClientAwgSettings,
+  stripClientAwgSharedSettings,
+} from '#server/utils/amneziawg';
 
 function createPreparedStatement(db: DBType) {
   return {
@@ -56,6 +61,7 @@ export class ClientService {
     const result = await this.#statements.findAll.execute();
     return result.map((row) => ({
       ...row,
+      awgSettings: stripClientAwgSharedSettings(row.awgSettings),
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
     }));
@@ -101,6 +107,7 @@ export class ClientService {
 
     return result.map((row) => ({
       ...row,
+      awgSettings: stripClientAwgSharedSettings(row.awgSettings),
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
     }));
@@ -144,16 +151,21 @@ export class ClientService {
 
     return result.map((row) => ({
       ...row,
+      awgSettings: stripClientAwgSharedSettings(row.awgSettings),
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
     }));
   }
 
-  get(id: ID) {
-    return this.#statements.findById.execute({ id });
+  async get(id: ID) {
+    const row = await this.#statements.findById.execute({ id });
+    return row
+      ? { ...row, awgSettings: stripClientAwgSharedSettings(row.awgSettings) }
+      : row;
   }
 
-  async create({ name, expiresAt }: ClientCreateType) {
+  async create({ name, expiresAt, awgSettings = null }: ClientCreateType) {
+    const clientAwgSettings = stripClientAwgSharedSettings(awgSettings);
     const privateKey = await wg.generatePrivateKey();
     const publicKey = await wg.getPublicKey(privateKey);
     const preSharedKey = await wg.generatePreSharedKey();
@@ -179,6 +191,22 @@ export class ClientService {
       if (!clientConfig) {
         throw new Error('WireGuard interface configuration not found');
       }
+
+      AwgParametersSchema.parse({
+        ...clientInterface,
+        jC: clientConfig.defaultJC,
+        jMin: clientConfig.defaultJMin,
+        jMax: clientConfig.defaultJMax,
+        i1: clientConfig.defaultI1,
+        i2: clientConfig.defaultI2,
+        i3: clientConfig.defaultI3,
+        i4: clientConfig.defaultI4,
+        i5: clientConfig.defaultI5,
+        awgSettings: resolveClientAwgSettings(
+          clientInterface.awgSettings,
+          clientAwgSettings
+        ),
+      });
 
       const ipv4Cidr = parseCidr(clientInterface.ipv4Cidr);
       const ipv4Address = nextIP(4, ipv4Cidr, clients);
@@ -207,6 +235,7 @@ export class ClientService {
           i3: clientConfig.defaultI3,
           i4: clientConfig.defaultI4,
           i5: clientConfig.defaultI5,
+          awgSettings: clientAwgSettings,
           persistentKeepalive: clientConfig.defaultPersistentKeepalive,
           serverAllowedIps: [],
           enabled: true,
@@ -225,6 +254,13 @@ export class ClientService {
   }
 
   update(id: ID, data: UpdateClientType) {
+    const updates =
+      data.awgSettings === undefined
+        ? data
+        : {
+            ...data,
+            awgSettings: stripClientAwgSharedSettings(data.awgSettings),
+          };
     return this.#db.transaction(async (tx) => {
       const clientInterface = await tx.query.wgInterface
         .findFirst({
@@ -244,7 +280,22 @@ export class ClientService {
         throw new Error('IPv6 address is not within the CIDR range');
       }
 
-      await tx.update(client).set(data).where(eq(client.id, id)).execute();
+      const current = await tx.query.client
+        .findFirst({ where: eq(client.id, id) })
+        .execute();
+      if (!current) throw new Error('Client not found');
+      AwgParametersSchema.parse({
+        ...clientInterface,
+        ...updates,
+        awgSettings: resolveClientAwgSettings(
+          clientInterface.awgSettings,
+          updates.awgSettings === undefined
+            ? current.awgSettings
+            : updates.awgSettings
+        ),
+      });
+
+      await tx.update(client).set(updates).where(eq(client.id, id)).execute();
     });
   }
 
