@@ -37,6 +37,7 @@ import {
   stopRouting,
   startRouting,
   armAppliedRoutingGate,
+  ownsRoutingListener,
 } from '../../server/utils/routingRuntime';
 
 const privateKey = Buffer.alloc(32, 1).toString('base64');
@@ -152,6 +153,27 @@ describe('AWG outbound imports', () => {
 });
 
 describe('routing validation and rendering', () => {
+  test('read-only listener readiness requires exact owned PID, TCP state and port', () => {
+    const listener =
+      'LISTEN 0 4096 0.0.0.0:16080 0.0.0.0:* users:(("ld-musl-x86_64",pid=123,fd=7))';
+    expect(ownsRoutingListener(listener, 123)).toBe(true);
+    expect(ownsRoutingListener(listener, 12)).toBe(false);
+    expect(ownsRoutingListener(listener, 1234)).toBe(false);
+    expect(
+      ownsRoutingListener(listener.replace('pid=123', 'pid=1234'), 123)
+    ).toBe(false);
+    expect(
+      ownsRoutingListener(listener.replace(':16080 ', ':16081 '), 123)
+    ).toBe(false);
+    expect(ownsRoutingListener(listener.replace('LISTEN', 'ESTAB'), 123)).toBe(
+      false
+    );
+    expect(
+      ownsRoutingListener(listener.replace('users:(', 'missing:('), 123)
+    ).toBe(false);
+    expect(ownsRoutingListener(listener, 0)).toBe(false);
+    expect(ownsRoutingListener(listener, -1)).toBe(false);
+  });
   test('routing starts disabled and empty', () => {
     expect(RoutingConfigSchema.parse({})).toEqual({
       version: 1,

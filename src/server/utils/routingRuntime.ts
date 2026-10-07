@@ -2,7 +2,6 @@ import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFile, mkdir, rm, access, open } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { createConnection } from 'node:net';
 
 import {
   RoutingConfigSchema,
@@ -70,10 +69,14 @@ let status: RoutingStatus = {
 let queue: Promise<unknown> = Promise.resolve();
 
 /** Intentionally suppress subprocess output: tool errors can contain imported secrets. */
-async function command(file: string, args: string[]): Promise<string> {
+async function command(
+  file: string,
+  args: string[],
+  timeout = 20000
+): Promise<string> {
   try {
     const result = await exec(file, args, {
-      timeout: 20000,
+      timeout,
       maxBuffer: 1024 * 1024,
     });
     return result.stdout;
@@ -346,32 +349,53 @@ export function armAppliedRoutingGate(
   });
 }
 
+/** Match only a TCP listener owned by the exact child PID, never another process. */
+export function ownsRoutingListener(output: string, pid: number): boolean {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  return output.split('\n').some((line) => {
+    const fields = line.trim().split(/\s+/);
+    if (
+      fields[0] !== 'LISTEN' ||
+      !fields[3]?.endsWith(`:${ROUTING_TPROXY_PORT}`)
+    )
+      return false;
+    const processes = line.slice(line.indexOf('users:('));
+    if (!processes.startsWith('users:(')) return false;
+    return [...processes.matchAll(/\bpid=(\d+)(?=[,)])/g)].some(
+      (match) => Number(match[1]) === pid
+    );
+  });
+}
+
 async function listenerReady(child: ChildProcess): Promise<void> {
-  for (let attempt = 0; attempt < 50; attempt++) {
-    if (child.exitCode !== null || child.signalCode !== null)
+  const deadline = performance.now() + 5000;
+  const assertAlive = () => {
+    if (!child.pid || child.exitCode !== null || child.signalCode !== null)
       throw new RoutingValidationError(
         'Routing process exited before becoming ready'
       );
-    const ready = await new Promise<boolean>((resolve) => {
-      const socket = createConnection({
-        host: '127.0.0.1',
-        port: ROUTING_TPROXY_PORT,
-      });
-      socket.setTimeout(150);
-      let done = false;
-      const finish = (value: boolean) => {
-        if (!done) {
-          done = true;
-          socket.destroy();
-          resolve(value);
-        }
-      };
-      socket.once('connect', () => finish(true));
-      socket.once('error', () => finish(false));
-      socket.once('timeout', () => finish(false));
-    });
-    if (ready) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+  };
+  while (performance.now() < deadline) {
+    assertAlive();
+    let listeners = '';
+    try {
+      // Inspect kernel socket state only. Connecting to a TProxy listener would
+      // proxy its own probe back into itself and recursively create connections.
+      listeners = await command(
+        'ss',
+        ['-H', '-lntp', 'sport', '=', `:${ROUTING_TPROXY_PORT}`],
+        Math.max(1, Math.min(1000, Math.floor(deadline - performance.now())))
+      );
+    } catch {
+      // Retry unavailable or not-yet-visible socket metadata within the deadline.
+    }
+    assertAlive();
+    if (ownsRoutingListener(listeners, child.pid!)) return;
+    const remaining = deadline - performance.now();
+    if (remaining > 0)
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(100, remaining))
+      );
   }
   throw new RoutingValidationError('Routing listener did not become ready');
 }
@@ -554,6 +578,10 @@ async function activate(
     owned.tproxyRule = true;
     await command('nft', ['-f', `${dir}/routes.nft`]);
     owned.nft = true;
+    if (child.exitCode !== null || child.signalCode !== null)
+      throw new RoutingValidationError(
+        'Routing process stopped during activation; fail-closed gate remains'
+      );
     current = owned;
     status = {
       state: 'running',
