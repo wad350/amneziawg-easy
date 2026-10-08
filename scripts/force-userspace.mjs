@@ -9,10 +9,18 @@ if (original.split(anchor).length !== 2) {
 }
 const patched = original.replace(
   anchor,
-  `${anchor}\tif [[ \${AWG_FORCE_USERSPACE:-false} == true ]]; then
-\t\tcmd "\${WG_QUICK_USERSPACE_IMPLEMENTATION:-amneziawg-go}" "$INTERFACE"
-\t\treturn
-\tfi
+  `${anchor}\tcase "\${AWG_BACKEND:-userspace}" in
+\t\tuserspace)
+\t\t\tcmd "\${WG_QUICK_USERSPACE_IMPLEMENTATION:-amneziawg-go}" "$INTERFACE"
+\t\t\treturn
+\t\t\t;;
+\t\tkernel)
+\t\t\t[[ -d /sys/module/amneziawg ]] || die "Kernel AWG requires an already loaded amneziawg module"
+\t\t\tcmd ip link add "$INTERFACE" type amneziawg || return $?
+\t\t\treturn
+\t\t\t;;
+\t\t*) die "AWG_BACKEND must be userspace or kernel" ;;
+\tesac
 `,
 );
 fs.writeFileSync(target, patched);

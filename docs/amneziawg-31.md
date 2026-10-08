@@ -16,6 +16,14 @@ The UDP mapping and initialized interface port use the same `AWG_UDP_PORT`. To c
 
 The image pins matching official AWG 3.1 Go/tools commits and sing-box 1.14.2 with download checksums. It requires `/dev/net/tun` and `NET_ADMIN` in its private network namespace, without `SYS_MODULE`, host networking or a kernel-module directory mount.
 
+## Select the inbound backend
+
+The default `AWG_BACKEND=userspace` uses the pinned `amneziawg-go` implementation. Set `AWG_BACKEND=kernel` in the private Compose `.env` to use an AmneziaWG kernel module that is already loaded on the host. This flag takes precedence over the legacy `AWG_FORCE_USERSPACE` setting. The container does not install, load, unload or update host modules and does not require `SYS_MODULE` or access to `/lib/modules`.
+
+Kernel mode requires `/sys/module/amneziawg` to be visible and creates an `amneziawg` link only in the instance's separate Docker bridge namespace. Startup refuses host networking, `SYS_MODULE`, or an existing `wg0` with a different link type. A kernel creation error stops startup; it does not silently fall back to Go. Imported routing outbounds continue to use `amneziawg-go` independently of the inbound backend, so `/dev/net/tun` remains required in both modes.
+
+Before switching an existing instance, back up its private volume, verify that the loaded module supports every saved AWG directive, and retain the previous image. Recreate only this instance using the same volume, port and network. Switching the backend does not change stored peer keys, AWG parameters, client profiles or routing rules, but briefly interrupts its active tunnels. Roll back by restoring the previous image and `AWG_BACKEND=userspace` with the same private volume. Do not regenerate parameters or import client profiles as part of a backend switch.
+
 ## Generate and export AWG 3.1 profiles
 
 Open **Admin → Interface → Generate AWG 3.1 parameters**. The generator fills the interface form with a new parameter set and header protection key. It does not save the database, apply interface changes, create peers or alter existing profiles.

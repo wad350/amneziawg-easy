@@ -38,6 +38,11 @@ import {
   ROUTING_DATA_DIR,
 } from './routingStore';
 import { mergeRoutingRules } from './routingRevision';
+import {
+  awgBackend,
+  awgIsolationMarker,
+  assertAwgBackendAvailable,
+} from './runtimeIsolation';
 
 const exec = promisify(execFile);
 const RUNTIME_ROOT = `${ROUTING_DATA_DIR}/.awg-easy-routing-runtime`;
@@ -74,12 +79,14 @@ let queue: Promise<unknown> = Promise.resolve();
 async function command(
   file: string,
   args: string[],
-  timeout = 20000
+  timeout = 20000,
+  environment?: NodeJS.ProcessEnv
 ): Promise<string> {
   try {
     const result = await exec(file, args, {
       timeout,
       maxBuffer: 1024 * 1024,
+      ...(environment ? { env: environment } : {}),
     });
     return result.stdout;
   } catch {
@@ -90,23 +97,27 @@ async function command(
 }
 
 async function guardedNamespace(): Promise<void> {
-  if (
-    process.platform !== 'linux' ||
-    process.env.AWG_ISOLATED !== 'true' ||
-    process.env.AWG_FORCE_USERSPACE !== 'true'
-  )
+  if (process.platform !== 'linux' || process.env.AWG_ISOLATED !== 'true')
     throw new RoutingValidationError(
       'Routing requires the dedicated isolated Docker namespace'
     );
   await access('/.dockerenv');
-  await access('/dev/net/tun');
+  let backend;
+  try {
+    backend = awgBackend();
+    await assertAwgBackendAvailable(backend);
+  } catch (error) {
+    throw new RoutingValidationError(
+      error instanceof Error ? error.message : 'AWG backend is unavailable'
+    );
+  }
   let marker = '';
   try {
     marker = await readFile('/run/awg-easy-isolated-network', 'utf8');
   } catch {
     /* refuse absent marker */
   }
-  if (marker.trim() !== 'bridge-tun-v1')
+  if (marker.trim() !== awgIsolationMarker(backend))
     throw new RoutingValidationError('Isolated namespace marker is missing');
   const links = JSON.parse(
     await command('ip', ['-j', '-d', 'link', 'show', 'dev', 'eth0'])
@@ -131,6 +142,16 @@ async function guardedNamespace(): Promise<void> {
     throw new RoutingValidationError(
       'SYS_MODULE capability is forbidden for routing'
     );
+}
+
+/** Egresses retain their Go implementation independently of the inbound backend. */
+export function awgEgressEnvironment(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    AWG_BACKEND: 'userspace',
+    AWG_FORCE_USERSPACE: 'true',
+    WG_QUICK_USERSPACE_IMPLEMENTATION: 'amneziawg-go',
+  };
 }
 
 function serialized<T>(fn: () => Promise<T>): Promise<T> {
@@ -171,9 +192,14 @@ async function cleanup(owned: OwnedRuntime): Promise<void> {
   // Delete only the named table and exact policy rules created by this controller.
   // Keep ownership and private files for retry when any exact deletion fails.
   let failed = false;
-  const remove = async (file: string, args: string[], done: () => void) => {
+  const remove = async (
+    file: string,
+    args: string[],
+    done: () => void,
+    environment?: NodeJS.ProcessEnv
+  ) => {
     try {
-      await command(file, args);
+      await command(file, args, 20000, environment);
       done();
     } catch {
       failed = true;
@@ -251,9 +277,14 @@ async function cleanup(owned: OwnedRuntime): Promise<void> {
       );
   }
   for (const name of owned.interfaces.slice().reverse())
-    await remove('awg-quick', ['down', `${owned.dir}/${name}.conf`], () => {
-      owned.interfaces.splice(owned.interfaces.indexOf(name), 1);
-    });
+    await remove(
+      'awg-quick',
+      ['down', `${owned.dir}/${name}.conf`],
+      () => {
+        owned.interfaces.splice(owned.interfaces.indexOf(name), 1);
+      },
+      awgEgressEnvironment()
+    );
   if (failed)
     throw new RoutingValidationError(
       'Owned routing cleanup failed; fail-closed gate and retry state are retained'
@@ -501,7 +532,12 @@ async function activate(
       const name = egressInterface(egress.id);
       const profile = parseAwgProfile(egress.profile);
       const sourceAddress = `${profile.address.split('/')[0]}/32`;
-      await command('awg-quick', ['up', `${dir}/${name}.conf`]);
+      await command(
+        'awg-quick',
+        ['up', `${dir}/${name}.conf`],
+        20000,
+        awgEgressEnvironment()
+      );
       owned.interfaces.push(name);
       const table = ROUTING_POLICY_TABLE + index + 1;
       const priority = ROUTING_POLICY_PRIORITY + index + 1;

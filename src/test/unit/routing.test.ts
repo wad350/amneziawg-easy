@@ -9,7 +9,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { RoutingConfigSchema } from '../../shared/types/routing';
 import {
@@ -37,6 +37,7 @@ import {
   startRouting,
   armAppliedRoutingGate,
   ownsRoutingListener,
+  awgEgressEnvironment,
 } from '../../server/utils/routingRuntime';
 
 const privateKey = Buffer.alloc(32, 1).toString('base64');
@@ -96,12 +97,25 @@ const config = () =>
 const temporary: string[] = [];
 afterEach(async () => {
   await stopRouting();
+  vi.unstubAllEnvs();
   await Promise.all(
     temporary.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))
   );
 });
 
 describe('AWG outbound imports', () => {
+  test('outbound Go selection is scoped and cannot inherit kernel inbound mode', () => {
+    vi.stubEnv('AWG_BACKEND', 'kernel');
+    vi.stubEnv('AWG_FORCE_USERSPACE', 'false');
+    vi.stubEnv('WG_QUICK_USERSPACE_IMPLEMENTATION', 'unrelated-binary');
+    expect(awgEgressEnvironment()).toMatchObject({
+      AWG_BACKEND: 'userspace',
+      AWG_FORCE_USERSPACE: 'true',
+      WG_QUICK_USERSPACE_IMPLEMENTATION: 'amneziawg-go',
+    });
+    expect(process.env.AWG_BACKEND).toBe('kernel');
+    expect(process.env.AWG_FORCE_USERSPACE).toBe('false');
+  });
   test('preserves every supported 3.1 parameter and keepalive ranges', () => {
     const parsed = parseAwgProfile(profile);
     expect(parsed.interface.H4).toBe('4294967295');

@@ -6,6 +6,7 @@ services:
     image: amneziawg-easy:local
     environment:
       VPN_PROTOCOL: amneziawg
+      AWG_BACKEND: ${AWG_BACKEND:-userspace}
       AWG_FORCE_USERSPACE: "true"
       AWG_ISOLATED: "true"
       AWG_ROUTING_DEBUG: ${AWG_ROUTING_DEBUG:-false}
