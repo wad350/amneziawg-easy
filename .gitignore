@@ -1,6 +1,10 @@
 .DS_Store
 *.swp
 node_modules
+.env
+.env.*
+*.private.*
+.runtime/
 
 docs/site
 docs/.cache

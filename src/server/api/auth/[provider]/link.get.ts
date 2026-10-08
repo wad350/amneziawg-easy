@@ -1,6 +1,7 @@
 import { createError, sendRedirect } from 'h3';
 
 import Database from '#server/utils/Database';
+import { getAppPath } from '#server/utils/appPath';
 import { definePermissionEventHandler } from '#server/utils/handler';
 import { buildOauthConfig, getUserInfo } from '#server/utils/oauth';
 import { useWGSession } from '#server/utils/session';
@@ -38,6 +39,6 @@ export default definePermissionEventHandler(
 
     await Database.users.linkOauth(user.id, provider, userInfo.sub);
 
-    return sendRedirect(event, '/me');
+    return sendRedirect(event, getAppPath(event, '/me'));
   }
 );

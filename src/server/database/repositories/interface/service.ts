@@ -7,6 +7,20 @@ import type { InterfaceCidrUpdateType, InterfaceUpdateType } from './types';
 import { nextIPFromUsedAddresses } from '#server/utils/ip';
 import { client as clientSchema } from '#db/schema';
 import type { DBType } from '#db/sqlite';
+import { AwgParametersSchema } from '#server/utils/amneziawg';
+import { WG_ENV } from '#server/utils/config';
+
+function validateIsolatedCidr(value: string) {
+  if (!WG_ENV.AWG_ISOLATED) return;
+  const range = parseCidr(value);
+  const excluded = parseCidr('10.0.0.0/8');
+  if (
+    range.version !== 4 ||
+    (range.start <= excluded.end && range.end >= excluded.start)
+  ) {
+    throw new Error('Isolated AWG requires IPv4 outside 10.0.0.0/8');
+  }
+}
 
 function createPreparedStatement(db: DBType) {
   return {
@@ -58,7 +72,10 @@ export class InterfaceService {
     });
   }
 
-  update(data: InterfaceUpdateType) {
+  async update(data: InterfaceUpdateType) {
+    validateIsolatedCidr(data.ipv4Cidr);
+    const current = await this.get();
+    AwgParametersSchema.parse({ ...current, ...data });
     return this.#db
       .update(wgInterface)
       .set(data)
@@ -74,6 +91,7 @@ export class InterfaceService {
   }
 
   updateCidr(data: InterfaceCidrUpdateType) {
+    validateIsolatedCidr(data.ipv4Cidr);
     return this.#db.transaction(async (tx) => {
       const oldCidr = await tx.query.wgInterface
         .findFirst({

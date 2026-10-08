@@ -1,11 +1,19 @@
 <template>
   <div v-if="client.oneTimeLink !== null" class="text-xs text-gray-400">
-    <a :href="'./cnf/' + client.oneTimeLink.oneTimeLink">{{ path }}</a>
+    <a :href="configurationPath">{{ path }}</a>
   </div>
 </template>
 
 <script setup lang="ts">
 const props = defineProps<{ client: LocalClient }>();
+const appPath = useAppPath();
+const configurationPath = computed(() =>
+  props.client.oneTimeLink
+    ? appPath(
+        `/cnf/${encodeURIComponent(props.client.oneTimeLink.oneTimeLink)}`
+      )
+    : ''
+);
 
 const path = ref('Loading...');
 const timer = ref<NodeJS.Timeout | null>(null);
@@ -22,7 +30,7 @@ onMounted(() => {
       new Date(props.client.oneTimeLink.expiresAt).getTime() - Date.now();
 
     if (timeLeft <= 0) {
-      path.value = `${document.location.protocol}//${document.location.host}/cnf/${props.client.oneTimeLink.oneTimeLink} (00:00)`;
+      path.value = `${document.location.origin}${configurationPath.value} (00:00)`;
       return;
     }
 
@@ -39,7 +47,7 @@ onMounted(() => {
     date.setMinutes(minutes);
     date.setSeconds(seconds);
 
-    path.value = `${document.location.protocol}//${document.location.host}/cnf/${props.client.oneTimeLink.oneTimeLink} (${formatter.format(date)})`;
+    path.value = `${document.location.origin}${configurationPath.value} (${formatter.format(date)})`;
   }, 1000);
 });
 

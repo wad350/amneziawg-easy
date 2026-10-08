@@ -1,20 +1,28 @@
 import { eq, sql, or, like, and } from 'drizzle-orm';
 import { containsCidr, parseCidr } from 'cidr-tools';
 
+import { wgInterface, userConfig } from '../../schema';
+
 import { client } from './schema';
 import type {
+  ClientEditableFieldsType,
   ClientCreateFromExistingType,
   ClientCreateType,
   ClientQueryType,
   UpdateClientType,
 } from './types';
+import { ClientEditableUpdateError, ClientUpdateSchema } from './types';
 
 import Database from '#server/utils/Database';
 import { nextIP } from '#server/utils/ip';
 import type { ID } from '#server/utils/types';
 import { wg } from '#server/utils/wgHelper';
 import type { DBType } from '#db/sqlite';
-import { wgInterface, userConfig } from '#db/schema';
+import {
+  AwgParametersSchema,
+  resolveClientAwgSettings,
+  stripClientAwgSharedSettings,
+} from '#server/utils/amneziawg';
 
 function createPreparedStatement(db: DBType) {
   return {
@@ -43,10 +51,18 @@ function createPreparedStatement(db: DBType) {
 export class ClientService {
   #db: DBType;
   #statements: ReturnType<typeof createPreparedStatement>;
+  #mutationQueue: Promise<unknown> = Promise.resolve();
 
   constructor(db: DBType) {
     this.#db = db;
     this.#statements = createPreparedStatement(db);
+  }
+
+  /** Local SQLite write transactions must not overlap while awaiting callbacks. */
+  #mutate<T>(work: () => Promise<T>): Promise<T> {
+    const result = this.#mutationQueue.then(work, work);
+    this.#mutationQueue = result.catch(() => {});
+    return result;
   }
 
   /**
@@ -56,6 +72,7 @@ export class ClientService {
     const result = await this.#statements.findAll.execute();
     return result.map((row) => ({
       ...row,
+      awgSettings: stripClientAwgSharedSettings(row.awgSettings),
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
     }));
@@ -101,6 +118,7 @@ export class ClientService {
 
     return result.map((row) => ({
       ...row,
+      awgSettings: stripClientAwgSharedSettings(row.awgSettings),
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
     }));
@@ -144,61 +162,50 @@ export class ClientService {
 
     return result.map((row) => ({
       ...row,
+      awgSettings: stripClientAwgSharedSettings(row.awgSettings),
       createdAt: new Date(row.createdAt),
       updatedAt: new Date(row.updatedAt),
     }));
   }
 
-  get(id: ID) {
-    return this.#statements.findById.execute({ id });
+  async get(id: ID) {
+    const row = await this.#statements.findById.execute({ id });
+    return row
+      ? { ...row, awgSettings: stripClientAwgSharedSettings(row.awgSettings) }
+      : row;
   }
 
-  async create({ name, expiresAt }: ClientCreateType) {
+  async create({ name, expiresAt, awgSettings = null }: ClientCreateType) {
+    const clientAwgSettings = stripClientAwgSharedSettings(awgSettings);
     const privateKey = await wg.generatePrivateKey();
     const publicKey = await wg.getPublicKey(privateKey);
     const preSharedKey = await wg.generatePreSharedKey();
 
-    return this.#db.transaction(async (tx) => {
-      const clients = await tx.query.client.findMany().execute();
-      const clientInterface = await tx.query.wgInterface
-        .findFirst({
-          where: eq(wgInterface.name, 'wg0'),
-        })
-        .execute();
+    return this.#mutate(() =>
+      this.#db.transaction(async (tx) => {
+        const clients = await tx.query.client.findMany().execute();
+        const clientInterface = await tx.query.wgInterface
+          .findFirst({
+            where: eq(wgInterface.name, 'wg0'),
+          })
+          .execute();
 
-      if (!clientInterface) {
-        throw new Error('WireGuard interface not found');
-      }
+        if (!clientInterface) {
+          throw new Error('WireGuard interface not found');
+        }
 
-      const clientConfig = await tx.query.userConfig
-        .findFirst({
-          where: eq(userConfig.id, clientInterface.name),
-        })
-        .execute();
+        const clientConfig = await tx.query.userConfig
+          .findFirst({
+            where: eq(userConfig.id, clientInterface.name),
+          })
+          .execute();
 
-      if (!clientConfig) {
-        throw new Error('WireGuard interface configuration not found');
-      }
+        if (!clientConfig) {
+          throw new Error('WireGuard interface configuration not found');
+        }
 
-      const ipv4Cidr = parseCidr(clientInterface.ipv4Cidr);
-      const ipv4Address = nextIP(4, ipv4Cidr, clients);
-      const ipv6Cidr = parseCidr(clientInterface.ipv6Cidr);
-      const ipv6Address = nextIP(6, ipv6Cidr, clients);
-
-      return await tx
-        .insert(client)
-        .values({
-          name,
-          // TODO: properly assign user id
-          userId: 1,
-          interfaceId: 'wg0',
-          expiresAt,
-          privateKey,
-          publicKey,
-          preSharedKey,
-          ipv4Address,
-          ipv6Address,
-          mtu: clientConfig.defaultMtu,
+        AwgParametersSchema.parse({
+          ...clientInterface,
           jC: clientConfig.defaultJC,
           jMin: clientConfig.defaultJMin,
           jMax: clientConfig.defaultJMax,
@@ -207,45 +214,168 @@ export class ClientService {
           i3: clientConfig.defaultI3,
           i4: clientConfig.defaultI4,
           i5: clientConfig.defaultI5,
-          persistentKeepalive: clientConfig.defaultPersistentKeepalive,
-          serverAllowedIps: [],
-          enabled: true,
-        })
-        .returning({ clientId: client.id })
-        .execute();
-    });
+          awgSettings: resolveClientAwgSettings(
+            clientInterface.awgSettings,
+            clientAwgSettings
+          ),
+        });
+
+        const ipv4Cidr = parseCidr(clientInterface.ipv4Cidr);
+        const ipv4Address = nextIP(4, ipv4Cidr, clients);
+        const ipv6Cidr = parseCidr(clientInterface.ipv6Cidr);
+        const ipv6Address = nextIP(6, ipv6Cidr, clients);
+
+        return await tx
+          .insert(client)
+          .values({
+            name,
+            // TODO: properly assign user id
+            userId: 1,
+            interfaceId: 'wg0',
+            expiresAt,
+            privateKey,
+            publicKey,
+            preSharedKey,
+            ipv4Address,
+            ipv6Address,
+            mtu: clientConfig.defaultMtu,
+            jC: clientConfig.defaultJC,
+            jMin: clientConfig.defaultJMin,
+            jMax: clientConfig.defaultJMax,
+            i1: clientConfig.defaultI1,
+            i2: clientConfig.defaultI2,
+            i3: clientConfig.defaultI3,
+            i4: clientConfig.defaultI4,
+            i5: clientConfig.defaultI5,
+            awgSettings: clientAwgSettings,
+            persistentKeepalive: clientConfig.defaultPersistentKeepalive,
+            serverAllowedIps: [],
+            enabled: true,
+          })
+          .returning({ clientId: client.id })
+          .execute();
+      })
+    );
   }
 
   toggle(id: ID, enabled: boolean) {
-    return this.#statements.toggle.execute({ id, enabled });
+    return this.#mutate(() => this.#statements.toggle.execute({ id, enabled }));
   }
 
   delete(id: ID) {
-    return this.#statements.delete.execute({ id });
+    return this.#mutate(() => this.#statements.delete.execute({ id }));
   }
 
   update(id: ID, data: UpdateClientType) {
-    return this.#db.transaction(async (tx) => {
-      const clientInterface = await tx.query.wgInterface
-        .findFirst({
-          where: eq(wgInterface.name, 'wg0'),
-        })
-        .execute();
+    const updates =
+      data.awgSettings === undefined
+        ? data
+        : {
+            ...data,
+            awgSettings: stripClientAwgSharedSettings(data.awgSettings),
+          };
+    return this.#mutate(() =>
+      this.#db.transaction(async (tx) => {
+        const clientInterface = await tx.query.wgInterface
+          .findFirst({
+            where: eq(wgInterface.name, 'wg0'),
+          })
+          .execute();
 
-      if (!clientInterface) {
-        throw new Error('WireGuard interface not found');
-      }
+        if (!clientInterface) {
+          throw new Error('WireGuard interface not found');
+        }
 
-      if (!containsCidr(clientInterface.ipv4Cidr, data.ipv4Address)) {
-        throw new Error('IPv4 address is not within the CIDR range');
-      }
+        if (!containsCidr(clientInterface.ipv4Cidr, data.ipv4Address)) {
+          throw new Error('IPv4 address is not within the CIDR range');
+        }
 
-      if (!containsCidr(clientInterface.ipv6Cidr, data.ipv6Address)) {
-        throw new Error('IPv6 address is not within the CIDR range');
-      }
+        if (!containsCidr(clientInterface.ipv6Cidr, data.ipv6Address)) {
+          throw new Error('IPv6 address is not within the CIDR range');
+        }
 
-      await tx.update(client).set(data).where(eq(client.id, id)).execute();
-    });
+        const current = await tx.query.client
+          .findFirst({ where: eq(client.id, id) })
+          .execute();
+        if (!current) throw new Error('Client not found');
+        AwgParametersSchema.parse({
+          ...clientInterface,
+          ...updates,
+          awgSettings: resolveClientAwgSettings(
+            clientInterface.awgSettings,
+            updates.awgSettings === undefined
+              ? current.awgSettings
+              : updates.awgSettings
+          ),
+        });
+
+        await tx.update(client).set(updates).where(eq(client.id, id)).execute();
+      })
+    );
+  }
+
+  /** Read and validate current state atomically; update only explicit safe fields. */
+  updateEditableFields(id: ID, data: ClientEditableFieldsType) {
+    const fields = [
+      'name',
+      'enabled',
+      'expiresAt',
+      'dns',
+      'allowedIps',
+      'mtu',
+      'persistentKeepalive',
+    ] as const;
+    const keys = fields.filter((field) => Object.hasOwn(data, field));
+    if (
+      keys.length === 0 ||
+      Object.keys(data).some((key) => !fields.some((field) => field === key))
+    )
+      throw new Error('Unsupported editable client fields');
+
+    return this.#mutate(() =>
+      this.#db.transaction(async (tx) => {
+        const current = await tx.query.client
+          .findFirst({ where: eq(client.id, id) })
+          .execute();
+        if (!current)
+          throw new ClientEditableUpdateError(404, 'Client not found');
+        const clientInterface = await tx.query.wgInterface
+          .findFirst({ where: eq(wgInterface.name, current.interfaceId) })
+          .execute();
+        if (!clientInterface) throw new Error('WireGuard interface not found');
+
+        const validated = ClientUpdateSchema.parse({
+          ...current,
+          awgSettings: stripClientAwgSharedSettings(current.awgSettings),
+          ...data,
+        });
+        AwgParametersSchema.parse({
+          ...clientInterface,
+          ...validated,
+          awgSettings: resolveClientAwgSettings(
+            clientInterface.awgSettings,
+            validated.awgSettings ?? null
+          ),
+        });
+        if (
+          data.enabled === true &&
+          validated.expiresAt !== null &&
+          new Date() > new Date(validated.expiresAt)
+        )
+          throw new ClientEditableUpdateError(
+            422,
+            'Update the expired date before enabling this client'
+          );
+
+        const updates = Object.fromEntries(
+          keys.map((key) => [key, validated[key]])
+        ) as ClientEditableFieldsType;
+        await tx.update(client).set(updates).where(eq(client.id, id)).execute();
+        return tx.query.client
+          .findFirst({ where: eq(client.id, id) })
+          .execute();
+      })
+    );
   }
 
   async createFromExisting({
@@ -259,31 +389,33 @@ export class ClientService {
   }: ClientCreateFromExistingType) {
     const clientConfig = await Database.userConfigs.get();
 
-    return this.#db
-      .insert(client)
-      .values({
-        name,
-        userId: 1,
-        interfaceId: 'wg0',
-        privateKey,
-        publicKey,
-        preSharedKey,
-        ipv4Address,
-        ipv6Address,
-        mtu: clientConfig.defaultMtu,
-        jC: clientConfig.defaultJC,
-        jMin: clientConfig.defaultJMin,
-        jMax: clientConfig.defaultJMax,
-        i1: clientConfig.defaultI1,
-        i2: clientConfig.defaultI2,
-        i3: clientConfig.defaultI3,
-        i4: clientConfig.defaultI4,
-        allowedIps: clientConfig.defaultAllowedIps,
-        dns: clientConfig.defaultDns,
-        persistentKeepalive: clientConfig.defaultPersistentKeepalive,
-        serverAllowedIps: [],
-        enabled,
-      })
-      .execute();
+    return this.#mutate(() =>
+      this.#db
+        .insert(client)
+        .values({
+          name,
+          userId: 1,
+          interfaceId: 'wg0',
+          privateKey,
+          publicKey,
+          preSharedKey,
+          ipv4Address,
+          ipv6Address,
+          mtu: clientConfig.defaultMtu,
+          jC: clientConfig.defaultJC,
+          jMin: clientConfig.defaultJMin,
+          jMax: clientConfig.defaultJMax,
+          i1: clientConfig.defaultI1,
+          i2: clientConfig.defaultI2,
+          i3: clientConfig.defaultI3,
+          i4: clientConfig.defaultI4,
+          allowedIps: clientConfig.defaultAllowedIps,
+          dns: clientConfig.defaultDns,
+          persistentKeepalive: clientConfig.defaultPersistentKeepalive,
+          serverAllowedIps: [],
+          enabled,
+        })
+        .execute()
+    );
   }
 }

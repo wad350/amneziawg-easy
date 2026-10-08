@@ -70,6 +70,7 @@
 const toast = useToast();
 const { t } = useI18n();
 const route = useRoute();
+const appPath = useAppPath();
 
 const authenticating = ref(false);
 const remember = ref(false);
@@ -85,7 +86,7 @@ watchEffect(() => {
       : undefined;
 
   if (authMethods.value?.autoLaunchProvider && !autoLauchQuery) {
-    navigateTo(`/api/auth/${authMethods.value.autoLaunchProvider}`, {
+    navigateTo(appPath(`/api/auth/${authMethods.value.autoLaunchProvider}`), {
       external: true,
     });
   }
@@ -95,7 +96,7 @@ watchEffect(() => {
     autoLauchQuery !== 'false' &&
     authMethods.value?.providers?.[autoLauchQuery as OAUTH_PROVIDER]
   ) {
-    navigateTo(`/api/auth/${autoLauchQuery}`, {
+    navigateTo(appPath(`/api/auth/${autoLauchQuery}`), {
       external: true,
     });
   }

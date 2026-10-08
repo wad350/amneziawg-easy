@@ -145,6 +145,13 @@
               :description="$t('awg.i5Description')"
             />
           </FormGroup>
+          <FormGroup v-if="globalStore.information?.isAwg">
+            <AwgSettings
+              v-model="data.awgSettings"
+              prefix="client-awg31"
+              client
+            />
+          </FormGroup>
           <FormGroup>
             <FormHeading :description="$t('client.hooksDescription')">
               {{ $t('client.hooks') }}

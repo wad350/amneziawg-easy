@@ -6,6 +6,12 @@ import { WG_ENV } from '#server/utils/config';
 import { isPasswordValid } from '#server/utils/password';
 import type { ID } from '#server/utils/types';
 import type { UserType } from '#db/repositories/user/types';
+import { getAppRelativePath } from '#server/utils/appPath';
+import {
+  ApiTokenError,
+  authenticateApiToken,
+  isApiBearerAuthorization,
+} from '#server/utils/apiToken';
 
 export type WGSession = Partial<{
   userId: ID;
@@ -52,9 +58,44 @@ export async function getWGSession(event: H3Event) {
  * @throws
  */
 export async function getCurrentUser(event: H3Event) {
-  const session = await getWGSession(event);
-
   const authorization = getHeader(event, 'Authorization');
+  const rawAuthorizations: string[] = [];
+  const rawHeaders = event.node.req.rawHeaders ?? [];
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    if (rawHeaders[index]?.toLowerCase() === 'authorization') {
+      rawAuthorizations.push(rawHeaders[index + 1] ?? '');
+    }
+  }
+  const tokenAuthorization =
+    rawAuthorizations.length > 1 ? rawAuthorizations : authorization;
+
+  // An explicit Bearer attempt must never fall back to a logged-in cookie.
+  if (isApiBearerAuthorization(tokenAuthorization)) {
+    try {
+      return await authenticateApiToken(
+        {
+          authorization: tokenAuthorization,
+          method: event.method,
+          path: getAppRelativePath(event) ?? '',
+        },
+        {
+          sha256: process.env.AWG_API_TOKEN_SHA256,
+          username: process.env.AWG_API_TOKEN_USER,
+        },
+        (username) => Database.users.getByUsername(username)
+      );
+    } catch (error) {
+      if (error instanceof ApiTokenError) {
+        throw createError({
+          statusCode: error.statusCode,
+          statusMessage: error.message,
+        });
+      }
+      throw error;
+    }
+  }
+
+  const session = await getWGSession(event);
 
   let user: UserType | undefined;
   if (session.data.userId) {
@@ -71,7 +112,6 @@ export async function getCurrentUser(event: H3Event) {
     // Handle if authenticating using Header
     const [method, value] = authorization.split(' ');
     // Support Basic Authentication
-    // TODO: support personal access token or similar
     if (method !== 'Basic' || !value) {
       throw createError({
         statusCode: 400,

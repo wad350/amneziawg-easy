@@ -13,6 +13,7 @@
 
 <script setup lang="ts">
 const toast = useToast();
+const appPath = useAppPath();
 const toastRef = useTemplateRef('toastRef');
 toast.setToast(toastRef);
 
@@ -26,16 +27,16 @@ useHead({
   link: [
     {
       rel: 'manifest',
-      href: '/manifest.json',
+      href: appPath('/manifest.json'),
     },
     {
       rel: 'icon',
       type: 'image/png',
-      href: '/favicon.png',
+      href: appPath('/favicon.png'),
     },
     {
       rel: 'apple-touch-icon',
-      href: '/apple-touch-icon.png',
+      href: appPath('/apple-touch-icon.png'),
     },
   ],
   meta: [
@@ -52,6 +53,6 @@ useHead({
       content: 'black-translucent',
     },
   ],
-  title: 'WireGuard',
+  title: 'AmneziaWG',
 });
 </script>

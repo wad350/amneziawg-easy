@@ -1,3 +1,5 @@
+import { isAbsolute } from 'node:path';
+
 import { createDebug } from 'obug';
 import packageJson from '@@/package.json';
 
@@ -20,6 +22,7 @@ export const OLD_ENV = {
 };
 
 const detectAwg = async (): Promise<'awg' | 'wg'> => {
+  if (process.env.VPN_PROTOCOL === 'amneziawg') return 'awg';
   /** TODO: delete on next major version */
   if (process.env.EXPERIMENTAL_AWG === 'true') {
     const OVERRIDE_AUTO_AWG = process.env.OVERRIDE_AUTO_AWG?.toLowerCase();
@@ -43,6 +46,8 @@ const oauthProviders = process.env.OAUTH_PROVIDERS?.split(',')
   .filter((v) => isConfiguredOauthProvider(OAUTH_PROVIDERS[v]));
 
 export const WG_ENV = {
+  DATA_DIR: process.env.WG_DATA_DIR || '/etc/wireguard',
+  AWG_ISOLATED: process.env.AWG_ISOLATED === 'true',
   /** UI is hosted on HTTP instead of HTTPS */
   INSECURE: process.env.INSECURE === 'true',
   /** Port the UI is listening on */
@@ -65,6 +70,13 @@ export const WG_ENV = {
   /** Disable password authentication */
   DISABLE_PASSWORD_AUTH: process.env.DISABLE_PASSWORD_AUTH === 'true',
 };
+
+if (!isAbsolute(WG_ENV.DATA_DIR)) {
+  throw new Error('WG_DATA_DIR must be an absolute path');
+}
+
+// The database and newly created runtime files contain VPN credentials.
+if (process.platform !== 'win32') process.umask(0o077);
 
 if (WG_ENV.OAUTH_PROVIDERS && WG_ENV.OAUTH_PROVIDERS.length > 0) {
   SERVER_DEBUG(`

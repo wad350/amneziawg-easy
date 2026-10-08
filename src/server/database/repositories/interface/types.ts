@@ -2,19 +2,24 @@ import type { InferSelectModel } from 'drizzle-orm';
 import z from 'zod';
 import isCidr from 'is-cidr';
 
+import type { AwgSettings } from '../../../../shared/types/amneziawg';
+
 import type { wgInterface } from './schema';
 
 import {
+  AwgCpsSchema,
+  AwgHeaderSchema,
+  AwgJcSchema,
+  AwgJunkSizeSchema,
+  AwgPaddingSchema,
+  AwgSettingsSchema,
+  refineAwgParameters,
+} from '#server/utils/amneziawg';
+import {
   EnabledSchema,
-  HSchema,
-  ISchema,
-  JcSchema,
-  JmaxSchema,
-  JminSchema,
   MtuSchema,
   PortSchema,
   RoutingTableSchema,
-  SSchema,
   safeStringRefine,
   schemaForType,
   t,
@@ -29,8 +34,13 @@ export type InterfaceCreateType = Omit<
 
 export type InterfaceUpdateType = Omit<
   InterfaceCreateType,
-  'name' | 'createdAt' | 'updatedAt' | 'privateKey' | 'publicKey'
->;
+  | 'name'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'privateKey'
+  | 'publicKey'
+  | 'awgSettings'
+> & { awgSettings?: AwgSettings | null };
 
 const device = z
   .string({ message: t('zod.interface.device') })
@@ -44,32 +54,40 @@ const cidr = z
   .pipe(safeStringRefine);
 
 export const InterfaceUpdateSchema = schemaForType<InterfaceUpdateType>()(
-  z.object({
-    ipv4Cidr: cidr,
-    ipv6Cidr: cidr,
-    mtu: MtuSchema,
-    routingTable: RoutingTableSchema,
-    jC: JcSchema,
-    jMin: JminSchema,
-    jMax: JmaxSchema,
-    s1: SSchema,
-    s2: SSchema,
-    s3: SSchema,
-    s4: SSchema,
-    h1: HSchema,
-    h2: HSchema,
-    h3: HSchema,
-    h4: HSchema,
-    i1: ISchema,
-    i2: ISchema,
-    i3: ISchema,
-    i4: ISchema,
-    i5: ISchema,
-    port: PortSchema,
-    device: device,
-    enabled: EnabledSchema,
-    firewallEnabled: EnabledSchema,
-  })
+  z
+    .object({
+      ipv4Cidr: cidr,
+      ipv6Cidr: cidr,
+      mtu: MtuSchema,
+      routingTable: RoutingTableSchema,
+      jC: AwgJcSchema,
+      jMin: AwgJunkSizeSchema,
+      jMax: AwgJunkSizeSchema,
+      s1: AwgPaddingSchema,
+      s2: AwgPaddingSchema,
+      s3: AwgPaddingSchema,
+      s4: AwgPaddingSchema,
+      h1: AwgHeaderSchema,
+      h2: AwgHeaderSchema,
+      h3: AwgHeaderSchema,
+      h4: AwgHeaderSchema,
+      i1: AwgCpsSchema,
+      i2: AwgCpsSchema,
+      i3: AwgCpsSchema,
+      i4: AwgCpsSchema,
+      i5: AwgCpsSchema,
+      awgSettings: AwgSettingsSchema.nullable().optional(),
+      port: PortSchema,
+      device: device,
+      enabled: EnabledSchema,
+      firewallEnabled: EnabledSchema,
+    })
+    .superRefine((value, ctx) =>
+      refineAwgParameters(
+        { ...value, awgSettings: value.awgSettings ?? null },
+        ctx
+      )
+    )
 );
 
 export type InterfaceCidrUpdateType = {
